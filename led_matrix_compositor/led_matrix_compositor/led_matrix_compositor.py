@@ -120,7 +120,6 @@ class LEDMatrixCompositor(Node):
     def image_callback(self, msg):
         """Обрабатывает изображение для логической группы панелей"""
         try:
-            self.get_logger().info(f"Limage_callback: {msg.header.frame_id}")
             # Имя логической группы хранится в header.frame_id
             group_name = msg.header.frame_id
             
@@ -147,6 +146,7 @@ class LEDMatrixCompositor(Node):
                 self.get_logger().warn(f"Unsupported image encoding: {msg.encoding}. Expected 'rgb8'")
                 return
             
+            self.get_logger().info(f"image_callback: {msg.header.frame_id}")
             # Проверяем длину данных
             if len(msg.data) != expected_size:
                 self.get_logger().warn(f"Image data size {len(msg.data)} doesn't match expected size {expected_size}")
