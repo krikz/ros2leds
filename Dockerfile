@@ -43,4 +43,4 @@ ENV ROS_DOMAIN_ID=0
 ENV ROS_LOCALHOST_ONLY=0
 
 # Команда по умолчанию
-CMD ["bash", "-c", "source /ws/install/setup.bash && ros2 launch led_matrix_compositor led_matrix_compositor_launch.py"]
+CMD ["bash", "-c", ". /opt/ros2leds_venv/bin/activate && source /ws/install/setup.bash && ros2 launch led_matrix_compositor led_matrix_compositor_launch.py"]
