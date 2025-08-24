@@ -14,9 +14,6 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /ws
 RUN mkdir -p src
 
-# Копируем пакеты из локальной директории
-COPY led_matrix_compositor src/led_matrix_compositor
-COPY led_matrix_driver src/led_matrix_driver
 
 # Создаем и активируем виртуальное окружение
 RUN python3 -m venv /opt/ros2leds_venv
@@ -27,6 +24,10 @@ RUN . /opt/ros2leds_venv/bin/activate && \
     Pi5Neo \
     spidev \
     rpi_ws281x
+
+# Копируем пакеты из локальной директории
+COPY led_matrix_compositor src/led_matrix_compositor
+COPY led_matrix_driver src/led_matrix_driver
 
 # Сборка рабочей области
 RUN . /opt/ros/humble/setup.sh && \
