@@ -201,7 +201,7 @@ class LEDMatrixCompositor(Node):
                 self.buffer[panel_offset:panel_offset + len(panel_buffer)] = panel_buffer
         
         # Публикуем обновленный буфер
-        self.publish_buffer()
+        self.publish_buffer(self)
     
 def publish_buffer(self):
     """Публикует общий буфер в топик драйвера"""
