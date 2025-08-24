@@ -20,7 +20,7 @@ class PlasmaPublisher(Node):
         self.time_step = 0.1
         
         # Таймер для регулярной публикации
-        self.timer = self.create_timer(0.5, self.timer_callback)  # Каждые 0.5 секунды
+        self.timer = self.create_timer(0.1, self.timer_callback)  # Каждые 0.5 секунды
         
         self.get_logger().info('Plasma publisher started, publishing every 0.5 seconds')
     
@@ -48,7 +48,8 @@ class PlasmaPublisher(Node):
                 r = int(color_value * (1 + math.sin(self.time_offset * 0.3)) / 2)
                 g = int(color_value * (1 + math.cos(self.time_offset * 0.2)) / 2)
                 b = int(color_value * (1 + math.sin(self.time_offset * 0.1 + 1.0)) / 2)
-                
+                if y == 2:
+                    r = g = b = 0
                 img[y, x] = [r, g, b]
         
         return img
