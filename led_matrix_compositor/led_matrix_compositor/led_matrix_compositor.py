@@ -206,27 +206,13 @@ class LEDMatrixCompositor(Node):
         """Публикует общий буфер в топик драйвера"""
         msg = ByteMultiArray()
         
-        # Логируем информацию о буфере
-        self.get_logger().debug(f"Buffer type: {type(self.buffer)}")
-        self.get_logger().debug(f"Buffer length: {len(self.buffer)}")
-        
+        # Преобразуем в bytearray для корректной работы с ROS 2
         try:
-            # Преобразуем bytearray в list для корректной публикации
-            # Каждый элемент должен быть целым числом (0-255)
-            msg.data = [int(b) for b in self.buffer]
+            msg.data = bytearray(self.buffer)
             self.output_publisher.publish(msg)
             self.get_logger().debug(f"Published buffer with {len(msg.data)} bytes")
-            
         except Exception as e:
             self.get_logger().error(f"Error publishing buffer: {e}")
-            self.get_logger().error(f"Buffer type: {type(self.buffer)}, length: {len(self.buffer)}")
-            # Попробуем альтернативный способ
-            try:
-                msg.data = list(self.buffer)
-                self.output_publisher.publish(msg)
-                self.get_logger().info("Successfully published buffer using alternative method")
-            except Exception as e2:
-                self.get_logger().error(f"Alternative method also failed: {e2}")
     
     def clear_group(self, group_name):
         """Очищает логическую группу (заливает черным)"""
