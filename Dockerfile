@@ -14,10 +14,8 @@ RUN apt-get update && apt-get install -y \
 # Создаем рабочую область ROS 2
 RUN mkdir -p /ws/src
 
-# Клонируем репозиторий с временной меткой для отключения кэширования
-# Добавляем временный параметр, который делает команду уникальной каждый раз
-RUN echo "Cloning repository at $(date)" && \
-    git clone https://github.com/krikz/ros2leds.git /tmp/ros2leds && \
+# Клонируем репозиторий и правильно организуем структуру
+RUN git clone https://github.com/krikz/ros2leds.git /tmp/ros2leds && \
     cp -r /tmp/ros2leds/led_matrix_compositor /ws/src/ && \
     cp -r /tmp/ros2leds/led_matrix_driver /ws/src/ && \
     rm -rf /tmp/ros2leds
@@ -33,7 +31,16 @@ WORKDIR /ws
 
 # Сборка рабочей области
 RUN . /opt/ros/humble/setup.sh && \
+    echo "Проверка наличия config файлов перед сборкой..." && \
+    find /ws/src -name "*.yaml" && \
     colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+# Проверяем, что конфигурационные файлы установлены
+RUN . /opt/ros/humble/setup.bash && \
+    . /ws/install/setup.bash && \
+    echo "Проверка установленных config файлов..." && \
+    find /ws/install -name "*.yaml" && \
+    cat /ws/install/led_matrix_compositor/share/led_matrix_compositor/config/led_matrix_compositor.yaml
 
 # Источнирование окружения
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \

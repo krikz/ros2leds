@@ -1,6 +1,13 @@
 from setuptools import setup
+import os
+from glob import glob
 
 package_name = 'led_matrix_driver'
+
+# Убедимся, что config директория установлена правильно
+config_files = []
+if os.path.exists('config'):
+    config_files = [('share/' + package_name + '/config', glob('config/*.yaml'))]
 
 setup(
     name=package_name,
@@ -10,14 +17,13 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/led_matrix_driver_launch.py']),
-        ('share/' + package_name + '/config', ['config/led_matrix_driver.yaml']),
-    ],
+        ('share/' + package_name + '/launch', glob('launch/*.py')),
+    ] + config_files,
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Your Name',
     maintainer_email='user@example.com',
-    description='ROS 2 driver for LED matrix displays with flexible configuration',
+    description='ROS 2 driver for LED matrix panels',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
