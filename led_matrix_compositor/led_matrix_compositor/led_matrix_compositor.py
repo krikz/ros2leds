@@ -120,6 +120,7 @@ class LEDMatrixCompositor(Node):
     def image_callback(self, msg):
         """Обрабатывает изображение для логической группы панелей"""
         try:
+            self.get_logger().info(f"Limage_callback: {msg.header.frame_id}")
             # Имя логической группы хранится в header.frame_id
             group_name = msg.header.frame_id
             
