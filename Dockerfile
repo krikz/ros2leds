@@ -38,9 +38,9 @@ RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
     echo "source /ws/install/setup.bash" >> /root/.bashrc && \
     echo "source /opt/ros2leds_venv/bin/activate" >> /root/.bashrc
 
-# Экспорт переменной ROS_DISTRO
-ENV ROS_DISTRO=humble
+# Экспорт переменных ROS 2 для работы в сети
 ENV ROS_DOMAIN_ID=0
+ENV ROS_LOCALHOST_ONLY=0
 
 # Команда по умолчанию
 CMD ["bash", "-c", "source /ws/install/setup.bash && ros2 launch led_matrix_compositor led_matrix_compositor_launch.py"]
