@@ -203,11 +203,28 @@ class LEDMatrixCompositor(Node):
         # Публикуем обновленный буфер
         self.publish_buffer()
     
-    def publish_buffer(self):
-        """Публикует общий буфер в топик драйвера"""
-        msg = ByteMultiArray()
-        msg.data = self.buffer
+def publish_buffer(self):
+    """Публикует общий буфер в топик драйвера"""
+    msg = ByteMultiArray()
+    
+    # Логируем информацию о буфере
+    self.get_logger().debug(f"Buffer type: {type(self.buffer)}")
+    self.get_logger().debug(f"Buffer length: {len(self.buffer)}")
+    
+    # Преобразуем bytearray в list для корректной публикации
+    try:
+        # Создаем список байтов
+        data_list = []
+        for b in self.buffer:
+            data_list.append(int(b))
+        
+        msg.data = data_list
         self.output_publisher.publish(msg)
+        self.get_logger().debug(f"Published buffer with {len(data_list)} bytes")
+        
+    except Exception as e:
+        self.get_logger().error(f"Error publishing buffer: {e}")
+        self.get_logger().error(f"Buffer type: {type(self.buffer)}, length: {len(self.buffer)}")
     
     def clear_group(self, group_name):
         """Очищает логическую группу (заливает черным)"""
