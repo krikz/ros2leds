@@ -12,11 +12,6 @@ class LEDMatrixCompositor(Node):
         # Определяем конфигурацию панелей напрямую в коде
         # Физические панели (их реальное подключение)
         self.physical_panels = [
-            # 4 отдельные панели 8x8 (фары)
-            {'width': 8, 'height': 8},
-            {'width': 8, 'height': 8}, 
-            {'width': 8, 'height': 8},
-            {'width': 8, 'height': 8},
             # 5 панелей 5x5, соединенных в одну линию
             {'width': 5, 'height': 5},
             {'width': 5, 'height': 5},
@@ -27,31 +22,10 @@ class LEDMatrixCompositor(Node):
         
         # Логические группы панелей
         self.logical_groups = [
-            # Отдельные панели (фары)
-            {
-                'name': 'headlight_front_left',
-                'physical_indices': [0],
-                'arrangement': [1, 1]  # 1x1 (одна панель)
-            },
-            {
-                'name': 'headlight_front_right', 
-                'physical_indices': [1],
-                'arrangement': [1, 1]  # 1x1 (одна панель)
-            },
-            {
-                'name': 'headlight_rear_left',
-                'physical_indices': [2], 
-                'arrangement': [1, 1]  # 1x1 (одна панель)
-            },
-            {
-                'name': 'headlight_rear_right',
-                'physical_indices': [3],
-                'arrangement': [1, 1]  # 1x1 (одна панель)
-            },
             # Объединенная матрица из 5 панелей 5x5 (5x25)
             {
                 'name': 'main_display',
-                'physical_indices': [4, 5, 6, 7, 8],
+                'physical_indices': [0, 1, 2, 3, 4],
                 'arrangement': [5, 1]  # 5 панелей в горизонтальном ряду
             }
         ]
