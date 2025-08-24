@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import ByteMultiArray
+from std_msgs.msg import Int8MultiArray
 import time
 
 # Импортируем библиотеку для управления матрицей
@@ -55,7 +55,7 @@ class LEDMatrixSimple(Node):
         
         # Подписываемся на топик с данными
         self.data_subscription = self.create_subscription(
-            ByteMultiArray,
+            Int8MultiArray,
             self.input_topic,
             self.data_callback,
             10)

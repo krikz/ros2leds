@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import ByteMultiArray
+from std_msgs.msg import Int8MultiArray
 from sensor_msgs.msg import Image
 import numpy as np
 
@@ -104,7 +104,7 @@ class LEDMatrixCompositor(Node):
         self.buffer = bytearray(self.total_leds * 3)
         
         # Публикуем в топик драйвера
-        self.output_publisher = self.create_publisher(ByteMultiArray, self.output_topic, 10)
+        self.output_publisher = self.create_publisher(Int8MultiArray, self.output_topic, 10)
         
         # Подписываемся на топик с изображениями для логических групп
         self.image_subscription = self.create_subscription(
@@ -204,7 +204,7 @@ class LEDMatrixCompositor(Node):
     
     def publish_buffer(self):
         """Публикует общий буфер в топик драйвера"""
-        msg = ByteMultiArray()
+        msg = Int8MultiArray()
         
         # Используем bytearray напрямую
         if isinstance(self.buffer, list):
