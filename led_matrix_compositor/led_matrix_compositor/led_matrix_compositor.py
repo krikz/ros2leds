@@ -206,27 +206,28 @@ class LEDMatrixCompositor(Node):
         """Публикует общий буфер в топик драйвера"""
         msg = Int8MultiArray()
         
-        # Используем bytearray напрямую
-        if isinstance(self.buffer, list):
-            msg.data = bytearray(self.buffer)
-        elif isinstance(self.buffer, bytes):
-            msg.data = bytearray(self.buffer)
-        else:
-            # Предполагаем, что это bytearray или подобное
-            msg.data = self.buffer if isinstance(self.buffer, bytearray) else bytearray(self.buffer)
-        
         try:
+            # Преобразуем буфер в список целых чисел в диапазоне [-128, 127]
+            # Если значение > 127, преобразуем в диапазон [0, 127]
+            processed_data = []
+            for value in self.buffer:
+                # Преобразуем в int, если это байт
+                if isinstance(value, (bytes, bytearray)):
+                    val = int.from_bytes(value, 'big')
+                else:
+                    val = int(value)
+                
+                # Ограничиваем диапазон [-128, 127]
+                # Для LED матриц используем [0, 127] (яркость не может быть отрицательной)
+                clamped_value = max(0, min(127, val))
+                processed_data.append(clamped_value)
+            
+            msg.data = processed_data
             self.output_publisher.publish(msg)
+            
         except Exception as e:
-            self.get_logger().error(f"Failed to publish: {e}")
-            # Попробуем преобразовать в list и обратно в bytearray
-            try:
-                data_list = [int(b) for b in self.buffer]
-                msg.data = bytearray(data_list)
-                self.output_publisher.publish(msg)
-                self.get_logger().info("Successfully published using fallback method")
-            except Exception as e2:
-                self.get_logger().error(f"Fallback also failed: {e2}")
+            self.get_logger().error(f"Error publishing buffer: {e}")
+            self.get_logger().error(f"Buffer sample: {list(self.buffer[:10])}")
     
     def clear_group(self, group_name):
         """Очищает логическую группу (заливает черным)"""
