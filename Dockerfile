@@ -3,7 +3,6 @@ FROM introlab3it/rtabmap_ros:humble-latest
 
 # Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
-    git \
     build-essential \
     libffi-dev \
     python3-dev \
@@ -12,39 +11,31 @@ RUN apt-get update && apt-get install -y \
     rm -rf /var/lib/apt/lists/*
 
 # Создаем рабочую область ROS 2
-RUN mkdir -p /ws/src
+WORKDIR /ws
+RUN mkdir -p src
 
-# Клонируем репозиторий и правильно организуем структуру
-RUN git clone https://github.com/krikz/ros2leds.git /tmp/ros2leds && \
-    cp -r /tmp/ros2leds/led_matrix_compositor /ws/src/ && \
-    cp -r /tmp/ros2leds/led_matrix_driver /ws/src/ && \
-    rm -rf /tmp/ros2leds
+# Копируем пакеты из локальной директории
+COPY led_matrix_compositor src/led_matrix_compositor
+COPY led_matrix_driver src/led_matrix_driver
 
-# Устанавливаем Python-зависимости для матрицы
-RUN pip3 install --break-system-packages --no-cache-dir \
+# Создаем и активируем виртуальное окружение
+RUN python3 -m venv /opt/ros2leds_venv
+
+# Устанавливаем Python-зависимости для матрицы в виртуальное окружение
+RUN . /opt/ros2leds_venv/bin/activate && \
+    pip install --no-cache-dir \
     Pi5Neo \
     spidev \
     rpi_ws281x
 
-# Устанавливаем рабочую директорию перед сборкой
-WORKDIR /ws
-
 # Сборка рабочей области
 RUN . /opt/ros/humble/setup.sh && \
-    echo "Проверка наличия config файлов перед сборкой..." && \
-    find /ws/src -name "*.yaml" && \
     colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
-
-# Проверяем, что конфигурационные файлы установлены
-RUN . /opt/ros/humble/setup.bash && \
-    . /ws/install/setup.bash && \
-    echo "Проверка установленных config файлов..." && \
-    find /ws/install -name "*.yaml" && \
-    cat /ws/install/led_matrix_compositor/share/led_matrix_compositor/config/led_matrix_compositor.yaml
 
 # Источнирование окружения
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "source /ws/install/setup.bash" >> /root/.bashrc
+    echo "source /ws/install/setup.bash" >> /root/.bashrc && \
+    echo "source /opt/ros2leds_venv/bin/activate" >> /root/.bashrc
 
 # Экспорт переменной ROS_DISTRO
 ENV ROS_DISTRO=humble
