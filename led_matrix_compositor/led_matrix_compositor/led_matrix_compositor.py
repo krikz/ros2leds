@@ -150,7 +150,6 @@ class LEDMatrixCompositor(Node):
             if len(msg.data) != expected_size:
                 self.get_logger().warn(f"Image data size {len(msg.data)} doesn't match expected size {expected_size}")
                 return
-            self.get_logger().info(f"image_callback: {msg.header.frame_id}")
             
             # Обрабатываем изображение для логической группы
             self._handle_logical_group(group, msg.data)
@@ -201,30 +200,30 @@ class LEDMatrixCompositor(Node):
                 self.buffer[panel_offset:panel_offset + len(panel_buffer)] = panel_buffer
         
         # Публикуем обновленный буфер
-        self.publish_buffer(self)
+        self.publish_buffer()
     
-def publish_buffer(self):
-    """Публикует общий буфер в топик драйвера"""
-    msg = ByteMultiArray()
-    
-    # Логируем информацию о буфере
-    self.get_logger().debug(f"Buffer type: {type(self.buffer)}")
-    self.get_logger().debug(f"Buffer length: {len(self.buffer)}")
-    
-    # Преобразуем bytearray в list для корректной публикации
-    try:
-        # Создаем список байтов
-        data_list = []
-        for b in self.buffer:
-            data_list.append(int(b))
+    def publish_buffer(self):
+        """Публикует общий буфер в топик драйвера"""
+        msg = ByteMultiArray()
         
-        msg.data = data_list
-        self.output_publisher.publish(msg)
-        self.get_logger().debug(f"Published buffer with {len(data_list)} bytes")
+        # Логируем информацию о буфере
+        self.get_logger().debug(f"Buffer type: {type(self.buffer)}")
+        self.get_logger().debug(f"Buffer length: {len(self.buffer)}")
         
-    except Exception as e:
-        self.get_logger().error(f"Error publishing buffer: {e}")
-        self.get_logger().error(f"Buffer type: {type(self.buffer)}, length: {len(self.buffer)}")
+        # Преобразуем bytearray в list для корректной публикации
+        try:
+            # Создаем список байтов
+            data_list = []
+            for b in self.buffer:
+                data_list.append(int(b))
+            
+            msg.data = data_list
+            self.output_publisher.publish(msg)
+            self.get_logger().debug(f"Published buffer with {len(data_list)} bytes")
+            
+        except Exception as e:
+            self.get_logger().error(f"Error publishing buffer: {e}")
+            self.get_logger().error(f"Buffer type: {type(self.buffer)}, length: {len(self.buffer)}")
     
     def clear_group(self, group_name):
         """Очищает логическую группу (заливает черным)"""
