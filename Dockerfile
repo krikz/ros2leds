@@ -29,7 +29,7 @@ RUN . /opt/ros/humble/setup.sh && \
 
 # Источнирование окружения
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "source /ws/install/setup.bash" >> /root/.bashrc && 
+    echo "source /ws/install/setup.bash" >> /root/.bashrc
 
 # Экспорт переменных ROS 2 для работы в сети
 ENV ROS_DOMAIN_ID=0
