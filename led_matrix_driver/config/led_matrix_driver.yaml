@@ -3,7 +3,7 @@ led_matrix_driver:
     # Общее количество светодиодов в цепочке
     num_leds: 125    
     # Скорость SPI в кГц
-    spi_speed_khz: 1300    
+    spi_speed_khz: 1200    
     # SPI устройство
     spi_device: '/dev/spidev0.0' 
     # Топик для приема данных

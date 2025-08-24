@@ -22,7 +22,7 @@ class LEDMatrixSimple(Node):
             namespace='',
             parameters=[
                 ('num_leds', 125),
-                ('spi_speed_khz', 1300),
+                ('spi_speed_khz', 1200),
                 ('spi_device', '/dev/spidev0.0'),
                 ('input_topic', 'led_matrix/data')
             ]
