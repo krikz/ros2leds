@@ -206,13 +206,27 @@ class LEDMatrixCompositor(Node):
         """Публикует общий буфер в топик драйвера"""
         msg = ByteMultiArray()
         
-        # Преобразуем в bytearray для корректной работы с ROS 2
-        try:
+        # Используем bytearray напрямую
+        if isinstance(self.buffer, list):
             msg.data = bytearray(self.buffer)
+        elif isinstance(self.buffer, bytes):
+            msg.data = bytearray(self.buffer)
+        else:
+            # Предполагаем, что это bytearray или подобное
+            msg.data = self.buffer if isinstance(self.buffer, bytearray) else bytearray(self.buffer)
+        
+        try:
             self.output_publisher.publish(msg)
-            self.get_logger().debug(f"Published buffer with {len(msg.data)} bytes")
         except Exception as e:
-            self.get_logger().error(f"Error publishing buffer: {e}")
+            self.get_logger().error(f"Failed to publish: {e}")
+            # Попробуем преобразовать в list и обратно в bytearray
+            try:
+                data_list = [int(b) for b in self.buffer]
+                msg.data = bytearray(data_list)
+                self.output_publisher.publish(msg)
+                self.get_logger().info("Successfully published using fallback method")
+            except Exception as e2:
+                self.get_logger().error(f"Fallback also failed: {e2}")
     
     def clear_group(self, group_name):
         """Очищает логическую группу (заливает черным)"""
