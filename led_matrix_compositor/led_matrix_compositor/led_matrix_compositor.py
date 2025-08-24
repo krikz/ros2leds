@@ -210,20 +210,23 @@ class LEDMatrixCompositor(Node):
         self.get_logger().debug(f"Buffer type: {type(self.buffer)}")
         self.get_logger().debug(f"Buffer length: {len(self.buffer)}")
         
-        # Преобразуем bytearray в list для корректной публикации
         try:
-            # Создаем список байтов
-            data_list = []
-            for b in self.buffer:
-                data_list.append(int(b))
-            
-            msg.data = data_list
+            # Преобразуем bytearray в list для корректной публикации
+            # Каждый элемент должен быть целым числом (0-255)
+            msg.data = [int(b) for b in self.buffer]
             self.output_publisher.publish(msg)
-            self.get_logger().debug(f"Published buffer with {len(data_list)} bytes")
+            self.get_logger().debug(f"Published buffer with {len(msg.data)} bytes")
             
         except Exception as e:
             self.get_logger().error(f"Error publishing buffer: {e}")
             self.get_logger().error(f"Buffer type: {type(self.buffer)}, length: {len(self.buffer)}")
+            # Попробуем альтернативный способ
+            try:
+                msg.data = list(self.buffer)
+                self.output_publisher.publish(msg)
+                self.get_logger().info("Successfully published buffer using alternative method")
+            except Exception as e2:
+                self.get_logger().error(f"Alternative method also failed: {e2}")
     
     def clear_group(self, group_name):
         """Очищает логическую группу (заливает черным)"""
