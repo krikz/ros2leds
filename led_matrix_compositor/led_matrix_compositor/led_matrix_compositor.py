@@ -215,20 +215,25 @@ class LEDMatrixCompositor(Node):
                 
                 # Учитываем змейку в физической панели
                 if snake_connection:
-                    # Перемешиваем строки: нечётные — в обратном порядке
                     temp_buffer = bytearray(panel_width * panel_height * 3)
                     for y in range(panel_height):
                         row_start = y * panel_width * 3
-                        row_slice = panel_buffer[row_start:row_start + panel_width * 3]
+                        pixel_row = panel_buffer[row_start:row_start + panel_width * 3]
+                        
+                        # Разбиваем на пиксели
+                        pixels = [pixel_row[i:i+3] for i in range(0, len(pixel_row), 3)]
+                        
+                        # Переворачиваем строку пикселей для нечётных строк
                         if y % 2 == 1:
-                            # Переворачиваем строку
-                            row_slice = row_slice[::3][::-1]  # RGB
-                            flipped = bytearray()
-                            for rgb in row_slice:
-                                flipped.extend([rgb, rgb, rgb])  # повторяем каждый байт 3 раза
-                            temp_buffer[row_start:row_start + panel_width * 3] = flipped
-                        else:
-                            temp_buffer[row_start:row_start + panel_width * 3] = row_slice
+                            pixels = pixels[::-1]
+                        
+                        # Собираем обратно
+                        flattened = bytearray()
+                        for pixel in pixels:
+                            flattened.extend(pixel)
+                        
+                        temp_buffer[row_start:row_start + panel_width * 3] = flattened
+                    
                     panel_buffer = temp_buffer
                 
                 # Обновляем общий буфер
