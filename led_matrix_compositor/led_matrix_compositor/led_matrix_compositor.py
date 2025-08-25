@@ -12,21 +12,22 @@ class LEDMatrixCompositor(Node):
         # Определяем конфигурацию панелей напрямую в коде
         # Физические панели (их реальное подключение)
         self.physical_panels = [
-            # 5 панелей 5x5, соединенных в одну линию
-            {'width': 5, 'height': 5},
-            {'width': 5, 'height': 5},
-            {'width': 5, 'height': 5},
-            {'width': 5, 'height': 5},
-            {'width': 5, 'height': 5}
+            {'width': 5, 'height': 5, 'snake_connection': True},
+            {'width': 5, 'height': 5, 'snake_connection': True},
+            {'width': 5, 'height': 5, 'snake_connection': True},
+            {'width': 5, 'height': 5, 'snake_connection': True},
+            {'width': 5, 'height': 5, 'snake_connection': True}
         ]
         
         # Логические группы панелей
         self.logical_groups = [
-            # Объединенная матрица из 5 панелей 5x5 (5x25)
             {
                 'name': 'main_display',
                 'physical_indices': [0, 1, 2, 3, 4],
-                'arrangement': [5, 1]  # 5 панелей в горизонтальном ряду
+                'arrangement': [5, 1],  # 5 панелей в ряд
+                'flip_x': False,
+                'flip_y': False,
+                'snake_arrangement': False  # не используем змейку в расположении
             }
         ]
         
@@ -54,7 +55,8 @@ class LEDMatrixCompositor(Node):
         for i, offset in enumerate(self.physical_offsets):
             width = self.physical_panels[i]['width']
             height = self.physical_panels[i]['height']
-            self.get_logger().info(f"  Physical Panel {i}: {width}x{height}, offset={offset}")
+            snake = self.physical_panels[i].get('snake_connection', False)
+            self.get_logger().info(f"  Physical Panel {i}: {width}x{height}, offset={offset}, snake={snake}")
         
         # Создаем и индексируем логические группы
         self.logical_groups_map = {}
@@ -62,12 +64,15 @@ class LEDMatrixCompositor(Node):
             name = group['name']
             self.logical_groups_map[name] = group
             
-            # Вычисляем размеры логической группы
+            # Установка значений по умолчанию
+            group.setdefault('flip_x', False)
+            group.setdefault('flip_y', False)
+            group.setdefault('snake_arrangement', False)
+            
             arrangement = group['arrangement']
             rows = arrangement[1]
             cols = arrangement[0]
             
-            # Проверяем, что количество панелей соответствует расположению
             if len(group['physical_indices']) != rows * cols:
                 self.get_logger().error(
                     f"Group '{name}' has {len(group['physical_indices'])} physical panels, "
@@ -79,15 +84,18 @@ class LEDMatrixCompositor(Node):
             group_width = 0
             group_height = 0
             
-            # Вычисляем ширину
             for r in range(rows):
                 row_width = 0
                 for c in range(cols):
-                    idx = group['physical_indices'][r * cols + c]
+                    # Учитываем змейку в расположении
+                    if group['snake_arrangement'] and r % 2 == 1:
+                        c_actual = cols - 1 - c
+                    else:
+                        c_actual = c
+                    idx = group['physical_indices'][r * cols + c_actual]
                     row_width += self.physical_panels[idx]['width']
                 group_width = max(group_width, row_width)
             
-            # Вычисляем высоту
             for c in range(cols):
                 col_height = 0
                 for r in range(rows):
@@ -120,17 +128,14 @@ class LEDMatrixCompositor(Node):
     def image_callback(self, msg):
         """Обрабатывает изображение для логической группы панелей"""
         try:
-            # Имя логической группы хранится в header.frame_id
             group_name = msg.header.frame_id
             
-            # Проверяем, что группа существует
             if group_name not in self.logical_groups_map:
                 self.get_logger().warn(f"Unknown logical group: '{group_name}'")
                 return
             
             group = self.logical_groups_map[group_name]
             
-            # Проверяем размеры изображения
             expected_width = group['width']
             expected_height = group['height']
             expected_size = expected_width * expected_height * 3
@@ -141,65 +146,95 @@ class LEDMatrixCompositor(Node):
                 )
                 return
             
-            # Проверяем формат изображения
             if msg.encoding != 'rgb8':
                 self.get_logger().warn(f"Unsupported image encoding: {msg.encoding}. Expected 'rgb8'")
                 return
             
-            # Проверяем длину данных
             if len(msg.data) != expected_size:
                 self.get_logger().warn(f"Image data size {len(msg.data)} doesn't match expected size {expected_size}")
                 return
             
-            # Обрабатываем изображение для логической группы
             self._handle_logical_group(group, msg.data)
         
         except Exception as e:
             self.get_logger().error(f"Error processing panel image: {str(e)}")
     
     def _handle_logical_group(self, group, image_data):
-        """Обрабатывает изображение для логической группы панелей"""
+        """Обрабатывает изображение для логической группы панелей с учётом flip и snake"""
         arrangement = group['arrangement']
         cols = arrangement[0]
         rows = arrangement[1]
         physical_indices = group['physical_indices']
+        flip_x = group['flip_x']
+        flip_y = group['flip_y']
+        snake_arrangement = group['snake_arrangement']
         
-        # Обрабатываем каждую физическую панель в группе
         for r in range(rows):
-            for c in range(cols):
-                # Индекс физической панели в группе
+            # Определяем порядок колонок в строке (змейка)
+            if snake_arrangement and r % 2 == 1:
+                c_range = range(cols - 1, -1, -1)
+            else:
+                c_range = range(cols)
+            
+            for c in c_range:
                 group_index = r * cols + c
                 physical_index = physical_indices[group_index]
                 
-                # Получаем размеры физической панели
                 panel = self.physical_panels[physical_index]
                 panel_width = panel['width']
                 panel_height = panel['height']
+                snake_connection = panel.get('snake_connection', False)
                 
                 # Вычисляем смещение в логической группе
                 x_offset = 0
                 for i in range(c):
-                    x_offset += self.physical_panels[physical_indices[r * cols + i]]['width']
+                    i_actual = i if not (snake_arrangement and r % 2 == 1) else (cols - 1 - i)
+                    idx = physical_indices[r * cols + i_actual]
+                    x_offset += self.physical_panels[idx]['width']
                 
                 y_offset = 0
                 for i in range(r):
-                    y_offset += self.physical_panels[physical_indices[i * cols + c]]['height']
+                    for j in range(cols):
+                        idx = physical_indices[i * cols + j]
+                        y_offset += self.physical_panels[idx]['height']
+                    break  # высота одинаковая по строке
                 
                 # Создаем буфер для этой панели
                 panel_buffer = bytearray(panel_width * panel_height * 3)
                 
                 # Копируем данные из общего изображения в буфер панели
                 for y in range(panel_height):
+                    py = y if not flip_y else (panel_height - 1 - y)
+                    src_y = y_offset + py
                     for x in range(panel_width):
-                        src_idx = ((y + y_offset) * group['width'] + (x + x_offset)) * 3
+                        px = x if not flip_x else (panel_width - 1 - x)
+                        src_x = x_offset + px
+                        src_idx = (src_y * group['width'] + src_x) * 3
                         dst_idx = (y * panel_width + x) * 3
                         panel_buffer[dst_idx:dst_idx+3] = image_data[src_idx:src_idx+3]
+                
+                # Учитываем змейку в физической панели
+                if snake_connection:
+                    # Перемешиваем строки: нечётные — в обратном порядке
+                    temp_buffer = bytearray(panel_width * panel_height * 3)
+                    for y in range(panel_height):
+                        row_start = y * panel_width * 3
+                        row_slice = panel_buffer[row_start:row_start + panel_width * 3]
+                        if y % 2 == 1:
+                            # Переворачиваем строку
+                            row_slice = row_slice[::3][::-1]  # RGB
+                            flipped = bytearray()
+                            for rgb in row_slice:
+                                flipped.extend([rgb, rgb, rgb])  # повторяем каждый байт 3 раза
+                            temp_buffer[row_start:row_start + panel_width * 3] = flipped
+                        else:
+                            temp_buffer[row_start:row_start + panel_width * 3] = row_slice
+                    panel_buffer = temp_buffer
                 
                 # Обновляем общий буфер
                 panel_offset = self.physical_offsets[physical_index] * 3
                 self.buffer[panel_offset:panel_offset + len(panel_buffer)] = panel_buffer
         
-        # Публикуем обновленный буфер
         self.publish_buffer()
     
     def publish_buffer(self):
@@ -207,18 +242,9 @@ class LEDMatrixCompositor(Node):
         msg = Int8MultiArray()
         
         try:
-            # Преобразуем буфер в список целых чисел в диапазоне [-128, 127]
-            # Если значение > 127, преобразуем в диапазон [0, 127]
             processed_data = []
             for value in self.buffer:
-                # Преобразуем в int, если это байт
-                if isinstance(value, (bytes, bytearray)):
-                    val = int.from_bytes(value, 'big')
-                else:
-                    val = int(value)
-                
-                # Ограничиваем диапазон [-128, 127]
-                # Для LED матриц используем [0, 127] (яркость не может быть отрицательной)
+                val = int(value)
                 clamped_value = max(0, min(127, val))
                 processed_data.append(clamped_value)
             
@@ -240,10 +266,7 @@ class LEDMatrixCompositor(Node):
         height = group['height']
         size = width * height * 3
         
-        # Создаем черное изображение
         black_image = bytearray(size)
-        
-        # Отправляем изображение в группу
         self._handle_logical_group(group, black_image)
     
     def clear_all(self):
