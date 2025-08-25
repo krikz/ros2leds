@@ -82,9 +82,9 @@ class LEDMatrixSimple(Node):
                 idx = i * 3
                 
                 # Получаем цвет
-                r = msg.data[idx]
-                g = msg.data[idx + 1]
-                b = msg.data[idx + 2]
+                r = msg.data[idx] + 128
+                g = msg.data[idx + 1] + 128
+                b = msg.data[idx + 2] + 128
                 
                 # Устанавливаем цвет
                 self.neo.set_led_color(i, r, g, b)
