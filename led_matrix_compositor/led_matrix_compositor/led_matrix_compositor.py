@@ -25,8 +25,8 @@ class LEDMatrixCompositor(Node):
                 'name': 'main_display',
                 'physical_indices': [0, 1, 2, 3, 4],
                 'arrangement': [5, 1],  # 5 панелей в ряд
-                'flip_x': False,
-                'flip_y': True,
+                'flip_x': True,
+                'flip_y': False,
                 'snake_arrangement': False  # не используем змейку в расположении
             }
         ]
