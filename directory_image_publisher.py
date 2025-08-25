@@ -169,7 +169,7 @@ def main(args=None):
     
     # Путь к директории с изображениями
     # Замените на ваш путь
-    image_directory = "/path/to/your/images"  # Например: "/home/user/animation_frames"
+    image_directory = "test_frames"  # Например: "/home/user/animation_frames"
     
     publisher = DirectoryImagePublisher(image_directory)
     
