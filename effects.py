@@ -6,6 +6,9 @@ import numpy as np
 import math
 import time
 import random
+import sounddevice as sd
+import threading
+import subprocess
 
 class RobotMouthPublisher(Node):
     def __init__(self):
@@ -32,36 +35,128 @@ class RobotMouthPublisher(Node):
         self.last_mode_switch = time.time()
         self.mode_switch_interval = 10.0  # Переключение каждые 10 сек
         
-        # Для плавного изменения амплитуды
-        self.smoothed_amplitude = 0.0
+        # Для амплитуды из аудиовыхода
+        self.current_amplitude = 0.0
+        self.audio_lock = threading.Lock()
+        self.audio_stream = None
+        self.running = True
+        
+        # Параметры аудио
+        self.sample_rate = 22050  # Оптимизировано для быстрой реакции
+        self.block_size = 512     # Меньший размер блока для низкой задержки
+        
+        # Задержка для PulseAudio (дает время инициализироваться)
+        time.sleep(2)
+        
+        # Настройка аудио
+        self.setup_audio_monitoring()
         
         # Таймеры
         self.create_timer(0.033, self.frame_callback)  # 30 FPS
         self.create_timer(1.0, self.debug_callback)    # Отладочная информация
         
-        self.get_logger().info(f'Robot mouth publisher started with {len(self.modes)} modes')
-        self.get_logger().info(f'Current mode: {self.modes[self.current_mode]} (will switch in {self.mode_switch_interval:.1f}s)')
+        self.get_logger().info(f'🤖 Robot mouth publisher started with {len(self.modes)} modes')
+        self.get_logger().info('🔊 Monitoring SYSTEM AUDIO OUTPUT - play music to see effects!')
 
-    def generate_amplitude(self):
-        """Генерирует сложный амплитудный сигнал как сумму синусоид"""
-        # Основная низкочастотная волна (медленные изменения)
-        base = math.sin(self.time_offset * 0.5) * 0.5 + 0.5
+    def setup_audio_monitoring(self):
+        """Настраивает мониторинг аудиовыхода через PulseAudio"""
+        try:
+            # Шаг 1: Получаем список источников через pactl
+            result = subprocess.run(['pactl', 'list', 'sources'], 
+                                   capture_output=True, text=True)
+            sources = result.stdout
+            
+            # Шаг 2: Ищем мониторные устройства
+            monitor_devices = []
+            current_source = {}
+            
+            for line in sources.split('\n'):
+                if "Name:" in line:
+                    current_source['name'] = line.split(':')[1].strip()
+                if "Description:" in line:
+                    current_source['description'] = line.split(':')[1].strip()
+                    if "monitor" in current_source['description'].lower():
+                        monitor_devices.append(current_source.copy())
+                    current_source = {}
+            
+            # Шаг 3: Проверяем доступные устройства в sounddevice
+            sd_devices = sd.query_devices()
+            pulse_device_id = None
+            
+            for i, device in enumerate(sd_devices):
+                # Ищем PulseAudio устройство
+                if "pulse" in device['name'].lower() and device['max_input_channels'] > 0:
+                    pulse_device_id = i
+                    break
+            
+            if pulse_device_id is not None:
+                self.get_logger().info(f"🎧 Using PulseAudio monitor device (ID: {pulse_device_id})")
+                self.get_logger().info(f"💡 Description: {sd_devices[pulse_device_id]['name']}")
+                
+                # Создаем поток с индексом PulseAudio
+                self.audio_stream = sd.InputStream(
+                    device=pulse_device_id,
+                    channels=1,
+                    samplerate=self.sample_rate,
+                    blocksize=self.block_size,
+                    callback=self.audio_callback
+                )
+                self.audio_stream.start()
+            else:
+                raise RuntimeError("No PulseAudio monitor device found in sounddevice")
+                
+        except Exception as e:
+            self.get_logger().error(f"❌ Audio monitoring error: {str(e)}")
+            self.get_logger().warn("⚠️ FALLBACK: Using synthetic audio signal generation")
+            
+            # Резервный генератор амплитуды (исправлено!)
+            def fallback_audio_callback(timer):
+                with self.audio_lock:
+                    # Генерируем сложный сигнал
+                    base = math.sin(self.time_offset * 0.5) * 0.5 + 0.5
+                    detail1 = math.sin(self.time_offset * 3.0) * 0.2
+                    detail2 = math.sin(self.time_offset * 7.0 + 1.0) * 0.15
+                    if random.random() < 0.02:
+                        detail2 += 0.3 * random.random()
+                    
+                    raw_amplitude = max(0.0, min(1.0, base + detail1 + detail2))
+                    self.current_amplitude = 0.9 * self.current_amplitude + 0.1 * raw_amplitude
+            
+            # Запускаем таймер для fallback (исправлено!)
+            self.create_timer(0.05, fallback_audio_callback)
+
+    def audio_callback(self, indata, frames, time, status):
+        """Обрабатывает аудиоданные в реальном времени"""
+        if status:
+            self.get_logger().warning(f"⚠️ Audio status: {status}")
         
-        # Дополнительные высокочастотные компоненты (детали)
-        detail1 = math.sin(self.time_offset * 3.0) * 0.2
-        detail2 = math.sin(self.time_offset * 7.0 + 1.0) * 0.15
+        # Вычисляем амплитуду как RMS
+        if indata is not None and len(indata) > 0:
+            # Берем только первый канал (моно)
+            audio_data = indata[:, 0]
+            
+            # Вычисляем RMS
+            rms = np.sqrt(np.mean(np.square(audio_data)))
+            
+            # Нормализуем с калибровкой для вашего устройства
+            normalized = min(1.0, rms * 15)  # Коэффициент подобран для вашего звука
+            
+            # Плавное сглаживание
+            with self.audio_lock:
+                self.current_amplitude = 0.7 * self.current_amplitude + 0.3 * normalized
+
+    def get_amplitude(self):
+        """Возвращает текущую амплитуду с плавным падением при тишине"""
+        with self.audio_lock:
+            amp = self.current_amplitude
         
-        # Случайные "всплески" (имитация речи)
-        if random.random() < 0.02:
-            detail2 += 0.3 * random.random()
+        # Плавное затухание при отсутствии звука
+        if amp < 0.01:
+            self.current_amplitude = 0.0
+        elif amp > 0:
+            self.current_amplitude = max(0, amp - 0.02)
         
-        # Комбинируем и нормализуем
-        raw_amplitude = base + detail1 + detail2
-        raw_amplitude = max(0.0, min(1.0, raw_amplitude))  # Ограничиваем [0, 1]
-        
-        # Плавное сглаживание
-        self.smoothed_amplitude = 0.9 * self.smoothed_amplitude + 0.1 * raw_amplitude
-        return self.smoothed_amplitude
+        return self.current_amplitude
 
     def generate_sound_mouth(self, amplitude):
         """Режим 1: Звуковая волна в форме рта"""
@@ -222,19 +317,18 @@ class RobotMouthPublisher(Node):
         
         return img
 
-    def frame_callback(self):
+    def frame_callback(self, timer=None):
         """Основной callback для генерации кадров"""
-        # Обновляем временной сдвиг
         self.time_offset += self.time_step
         
-        # Генерируем амплитуду
-        amplitude = self.generate_amplitude()
+        # Получаем амплитуду из аудиовыхода
+        amplitude = self.get_amplitude()
         
         # Проверяем необходимость смены режима
         if time.time() - self.last_mode_switch > self.mode_switch_interval:
             self.current_mode = (self.current_mode + 1) % len(self.modes)
             self.last_mode_switch = time.time()
-            self.get_logger().info(f'Mode switched to: {self.modes[self.current_mode]}')
+            self.get_logger().info(f'🔄 Mode switched to: {self.modes[self.current_mode]}')
         
         # Генерируем изображение в зависимости от режима
         if self.current_mode == 0:
@@ -248,7 +342,7 @@ class RobotMouthPublisher(Node):
         else:
             img = self.generate_hologram_mouth(amplitude)
         
-        # Создаем и публикуем сообщение
+        # Публикуем изображение
         msg = Image()
         msg.header.frame_id = 'main_display'
         msg.height = self.height
@@ -260,14 +354,26 @@ class RobotMouthPublisher(Node):
         
         self.publisher_.publish(msg)
 
-    def debug_callback(self):
-        """Отладочный callback для информации в лог"""
+    def debug_callback(self, timer=None):
+        """Отладочная информация"""
+        amp = self.get_amplitude()
         remaining = max(0, self.mode_switch_interval - (time.time() - self.last_mode_switch))
         self.get_logger().debug(
-            f'Mode: {self.modes[self.current_mode]} | '
-            f'Amplitude: {self.smoothed_amplitude:.2f} | '
-            f'Next switch: {remaining:.1f}s'
+            f'🖥️ Mode: {self.modes[self.current_mode]} | '
+            f'🔊 Audio Level: {amp:.2f} | '
+            f'🔄 Next switch: {remaining:.1f}s'
         )
+
+    def destroy_node(self):
+        """Корректное завершение"""
+        self.running = False
+        if self.audio_stream:
+            try:
+                self.audio_stream.stop()
+                self.audio_stream.close()
+            except:
+                pass
+        super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
@@ -277,9 +383,12 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        print(f"❌ Critical error: {e}")
     finally:
         node.destroy_node()
         rclpy.shutdown()
+        print("✅ Robot mouth node shutdown complete")
 
 if __name__ == '__main__':
     main()
