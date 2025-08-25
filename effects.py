@@ -250,7 +250,7 @@ class RobotMouthPublisher(Node):
         
         # Создаем и публикуем сообщение
         msg = Image()
-        msg.header.frame_id = 'robot_mouth'
+        msg.header.frame_id = 'main_display'
         msg.height = self.height
         msg.width = self.width
         msg.encoding = 'rgb8'
