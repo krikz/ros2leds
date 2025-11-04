@@ -4,8 +4,12 @@ from launch.actions import ExecuteProcess
 import os
 
 def generate_launch_description():
-    # Принудительно указываем путь к конфигурационному файлу
-    config_path = '/ws/install/led_matrix_compositor/share/led_matrix_compositor/config/led_matrix_compositor.yaml'
+    # Используем конфиг из volume (если есть), иначе из install
+    config_path_volume = '/config/led_matrix/led_matrix_compositor.yaml'
+    config_path_install = '/ws/install/led_matrix_compositor/share/led_matrix_compositor/config/led_matrix_compositor.yaml'
+    
+    # Приоритет: volume > install
+    config_path = config_path_volume if os.path.exists(config_path_volume) else config_path_install
     
     # Проверяем существование файла
     if not os.path.exists(config_path):
@@ -39,6 +43,11 @@ def generate_launch_description():
             yaml.dump(default_config, f)
         print(f"Created default config file at {config_path}")
     
+    # Конфиг драйвера - тоже приоритет volume > install
+    driver_config_volume = '/config/led_matrix/led_matrix_driver.yaml'
+    driver_config_install = '/ws/install/led_matrix_driver/share/led_matrix_driver/config/led_matrix_driver.yaml'
+    driver_config = driver_config_volume if os.path.exists(driver_config_volume) else driver_config_install
+    
     return LaunchDescription([
         # Запускаем драйвер
         Node(
@@ -46,7 +55,7 @@ def generate_launch_description():
             executable='led_matrix_driver',
             name='led_matrix_driver',
             output='screen',
-            parameters=['/ws/install/led_matrix_driver/share/led_matrix_driver/config/led_matrix_driver.yaml']
+            parameters=[driver_config]
         ),
         
         # Запускаем композитор с явным указанием пути к конфигурации
