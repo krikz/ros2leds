@@ -57,7 +57,7 @@ source install/setup.bash
 ```yaml
 led_matrix_driver:
   ros__parameters:
-    num_leds: 125        # Общее количество светодиодов
+    num_leds: 253        # Общее количество светодиодов
     spi_speed_khz: 800  # Скорость SPI в кГц
     spi_device: '/dev/spidev0.0'  # SPI устройство
     input_topic: 'led_matrix/data'  # Топик для приема данных
