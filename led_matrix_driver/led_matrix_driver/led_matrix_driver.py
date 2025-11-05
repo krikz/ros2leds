@@ -24,7 +24,8 @@ class LEDMatrixSimple(Node):
                 ('num_leds', 253),
                 ('spi_speed_khz', 800),
                 ('spi_device', '/dev/spidev0.0'),
-                ('input_topic', 'led_matrix/data')
+                ('input_topic', 'led_matrix/data'),
+                ('brightness', 25)  # Яркость 0-255 (25 = ~10%)
             ]
         )
         
@@ -33,11 +34,16 @@ class LEDMatrixSimple(Node):
         self.spi_speed_khz = self.get_parameter('spi_speed_khz').value
         self.spi_device = self.get_parameter('spi_device').value
         self.input_topic = self.get_parameter('input_topic').value
+        self.brightness = self.get_parameter('brightness').value
         
         # Проверяем корректность параметров
         if self.num_leds <= 0:
             self.get_logger().error("Parameter 'num_leds' must be positive")
             raise ValueError("Parameter 'num_leds' must be positive")
+        
+        if self.brightness < 0 or self.brightness > 255:
+            self.get_logger().error("Parameter 'brightness' must be between 0 and 255")
+            raise ValueError("Parameter 'brightness' must be between 0 and 255")
         
         # Инициализируем матрицу, если доступна библиотека pi5neo
         self.matrix_initialized = False
@@ -47,6 +53,7 @@ class LEDMatrixSimple(Node):
                 self.matrix_initialized = True
                 self.get_logger().info(f"LED matrix initialized with {self.spi_speed_khz} kHz SPI speed")
                 self.get_logger().info(f"Total LEDs: {self.num_leds}")
+                self.get_logger().info(f"Brightness: {self.brightness}/255 ({int(self.brightness/255*100)}%)")
             except Exception as e:
                 self.get_logger().error(f"Failed to initialize LED matrix: {str(e)}")
                 self.matrix_initialized = False
@@ -81,10 +88,10 @@ class LEDMatrixSimple(Node):
                 # Определяем индекс в данных
                 idx = i * 3
                 
-                # Получаем цвет
-                r = msg.data[idx] + 128
-                g = msg.data[idx + 1] + 128
-                b = msg.data[idx + 2] + 128
+                # Получаем цвет и применяем яркость
+                r = ((msg.data[idx] + 128) * self.brightness) // 255
+                g = ((msg.data[idx + 1] + 128) * self.brightness) // 255
+                b = ((msg.data[idx + 2] + 128) * self.brightness) // 255
                 
                 # Устанавливаем цвет
                 self.neo.set_led_color(i, r, g, b)
