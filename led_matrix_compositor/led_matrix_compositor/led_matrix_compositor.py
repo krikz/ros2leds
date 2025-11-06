@@ -12,9 +12,8 @@ class LEDMatrixCompositor(Node):
         # Определяем конфигурацию панелей напрямую в коде
         # Физические панели в порядке их подключения в цепочке SPI:
         # [0-4]: Main Display (5× 5×5 = 125 LEDs)
-        # [5]:   Передняя левая фара (8×8 = 64 LEDs)
-        # [6]:   Передняя правая фара (8×8 = 64 LEDs)
-        # Итого: 253 LEDs
+        # Фары пока физически не подключены
+        # Итого: 125 LEDs
         self.physical_panels = [
             # Main Display: 5 панелей 5×5
             {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 0
@@ -22,9 +21,6 @@ class LEDMatrixCompositor(Node):
             {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 2
             {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 3
             {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 4
-            # Передние фары: 2 панели 8×8
-            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 5 (FL)
-            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 6 (FR)
         ]
         
         # Логические группы панелей
@@ -36,33 +32,6 @@ class LEDMatrixCompositor(Node):
                 'arrangement': [5, 1],  # 5 панелей в ряд, 1 ряд
                 'flip_x': False,
                 'flip_y': True,
-                'snake_arrangement': False
-            },
-            # Передняя левая фара (8×8)
-            {
-                'name': 'wheel_front_left',
-                'physical_indices': [5],
-                'arrangement': [1, 1],  # 1 панель
-                'flip_x': False,
-                'flip_y': False,
-                'snake_arrangement': False
-            },
-            # Передняя правая фара (8×8)
-            {
-                'name': 'wheel_front_right',
-                'physical_indices': [6],
-                'arrangement': [1, 1],  # 1 панель
-                'flip_x': False,
-                'flip_y': False,
-                'snake_arrangement': False
-            },
-            # Обе передние фары вместе (16×8)
-            {
-                'name': 'wheels_front',
-                'physical_indices': [5, 6],
-                'arrangement': [2, 1],  # 2 панели в ряд
-                'flip_x': False,
-                'flip_y': False,
                 'snake_arrangement': False
             }
         ]
