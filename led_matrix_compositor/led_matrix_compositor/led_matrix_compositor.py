@@ -65,6 +65,8 @@ class LEDMatrixCompositor(Node):
         
         # Создаем и индексируем логические группы
         self.logical_groups_map = {}
+        # Отслеживаем неизвестные группы, для которых уже показано предупреждение
+        self.warned_unknown_groups = set()
         for group in self.logical_groups:
             name = group['name']
             self.logical_groups_map[name] = group
@@ -136,7 +138,10 @@ class LEDMatrixCompositor(Node):
             group_name = msg.header.frame_id
             
             if group_name not in self.logical_groups_map:
-                self.get_logger().warn(f"Unknown logical group: '{group_name}'")
+                # Показываем предупреждение только один раз для каждой неизвестной группы
+                if group_name not in self.warned_unknown_groups:
+                    self.get_logger().warn(f"Unknown logical group: '{group_name}'")
+                    self.warned_unknown_groups.add(group_name)
                 return
             
             group = self.logical_groups_map[group_name]
@@ -268,7 +273,10 @@ class LEDMatrixCompositor(Node):
     def clear_group(self, group_name):
         """Очищает логическую группу (заливает черным)"""
         if group_name not in self.logical_groups_map:
-            self.get_logger().warn(f"Unknown logical group: '{group_name}'")
+            # Показываем предупреждение только один раз для каждой неизвестной группы
+            if group_name not in self.warned_unknown_groups:
+                self.get_logger().warn(f"Unknown logical group: '{group_name}'")
+                self.warned_unknown_groups.add(group_name)
             return
         
         group = self.logical_groups_map[group_name]
