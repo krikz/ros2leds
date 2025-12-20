@@ -14,7 +14,9 @@ class LEDMatrixCompositor(Node):
         # [0-4]: Main Display (5× 5×5 = 125 LEDs)
         # [5]:   Передняя левая панель (8×8 = 64 LEDs)
         # [6]:   Передняя правая панель (8×8 = 64 LEDs)
-        # Итого: 253 LEDs
+        # [7]:   Задняя левая панель (8×8 = 64 LEDs)
+        # [8]:   Задняя правая панель (8×8 = 64 LEDs)
+        # Итого: 381 LEDs
         self.physical_panels = [
             # Main Display: 5 панелей 5×5
             {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 0
@@ -23,8 +25,11 @@ class LEDMatrixCompositor(Node):
             {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 3
             {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 4
             # Передние панели: 2 панели 8×8
-            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 5 (Left)
-            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 6 (Right)
+            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 5 (Front Left)
+            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 6 (Front Right)
+            # Задние панели: 2 панели 8×8
+            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 7 (Rear Left)
+            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 8 (Rear Right)
         ]
         
         # Логические группы панелей
@@ -51,6 +56,24 @@ class LEDMatrixCompositor(Node):
             {
                 'name': 'wheel_front_right',
                 'physical_indices': [6],
+                'arrangement': [1, 1],  # 1 панель
+                'flip_x': False,
+                'flip_y': False,
+                'snake_arrangement': False
+            },
+            # Задняя левая фара (8×8)
+            {
+                'name': 'wheel_rear_left',
+                'physical_indices': [7],
+                'arrangement': [1, 1],  # 1 панель
+                'flip_x': False,
+                'flip_y': False,
+                'snake_arrangement': False
+            },
+            # Задняя правая фара (8×8)
+            {
+                'name': 'wheel_rear_right',
+                'physical_indices': [8],
                 'arrangement': [1, 1],  # 1 панель
                 'flip_x': False,
                 'flip_y': False,
