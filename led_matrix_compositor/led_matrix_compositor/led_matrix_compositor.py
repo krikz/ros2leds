@@ -153,6 +153,9 @@ class LEDMatrixCompositor(Node):
         self.get_logger().info(f"Listening for panel images on topic: {self.input_topic}")
         self.get_logger().info(f"Publishing combined data to topic: {self.output_topic}")
         self.get_logger().info("LED Matrix Compositor is ready")
+        
+        # Публикуем начальный черный буфер чтобы инициализировать все LED
+        self.publish_buffer()
     
     def image_callback(self, msg):
         """Обрабатывает изображение для логической группы панелей"""
