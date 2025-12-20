@@ -25,11 +25,11 @@ class LEDMatrixCompositor(Node):
             {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 3
             {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 4
             # Передние панели: 2 панели 8×8
-            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 5 (Front Left)
-            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 6 (Front Right)
+            {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 5 (Front Left)
+            {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 6 (Front Right)
             # Задние панели: 2 панели 8×8
-            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 7 (Rear Left)
-            {'width': 8, 'height': 8, 'snake_connection': True},  # Panel 8 (Rear Right)
+            {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 7 (Rear Left)
+            {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 8 (Rear Right)
         ]
         
         # Логические группы панелей
@@ -57,8 +57,8 @@ class LEDMatrixCompositor(Node):
                 'name': 'wheel_front_right',
                 'physical_indices': [6],
                 'arrangement': [1, 1],  # 1 панель
-                'flip_x': False,
-                'flip_y': False,
+                'flip_x': True,
+                'flip_y': True,
                 'snake_arrangement': False
             },
             # Задняя левая фара (8×8)
@@ -273,6 +273,8 @@ class LEDMatrixCompositor(Node):
                 
                 # Учитываем змейку в физической панели
                 if snake_connection:
+                    snake_start_row = panel.get('snake_start_row', 0)
+                    snake_invert = panel.get('snake_invert', False)
                     temp_buffer = bytearray(panel_width * panel_height * 3)
                     for y in range(panel_height):
                         row_start = y * panel_width * 3
@@ -281,8 +283,13 @@ class LEDMatrixCompositor(Node):
                         # Разбиваем на пиксели
                         pixels = [pixel_row[i:i+3] for i in range(0, len(pixel_row), 3)]
                         
-                        # Переворачиваем строку пикселей для нечётных строк
-                        if y % 2 == 1:
+                        # Определяем нужно ли переворачивать строку
+                        should_flip = (y + snake_start_row) % 2 == 1
+                        if snake_invert:
+                            should_flip = not should_flip
+                        
+                        # Переворачиваем строку пикселей если нужно
+                        if should_flip:
                             pixels = pixels[::-1]
                         
                         # Собираем обратно
