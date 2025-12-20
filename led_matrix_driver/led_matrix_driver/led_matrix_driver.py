@@ -22,7 +22,7 @@ class LEDMatrixSimple(Node):
             namespace='',
             parameters=[
                 ('num_leds', 253),
-                ('spi_speed_khz', 800),
+                ('spi_speed_khz', 1000),
                 ('spi_device', '/dev/spidev0.0'),
                 ('input_topic', 'led_matrix/data'),
                 ('brightness', 25)  # Яркость 0-255 (25 = ~10%)
