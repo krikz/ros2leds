@@ -38,18 +38,18 @@ class LEDMatrixCompositor(Node):
                 'flip_y': True,
                 'snake_arrangement': False
             },
-            # Передняя левая панель (64×64)
+            # Передняя левая фара (8×8)
             {
-                'name': 'panel_front_left',
+                'name': 'wheel_front_left',
                 'physical_indices': [5],
                 'arrangement': [1, 1],  # 1 панель
                 'flip_x': False,
                 'flip_y': False,
                 'snake_arrangement': False
             },
-            # Передняя правая панель (64×64)
+            # Передняя правая фара (8×8)
             {
-                'name': 'panel_front_right',
+                'name': 'wheel_front_right',
                 'physical_indices': [6],
                 'arrangement': [1, 1],  # 1 панель
                 'flip_x': False,
