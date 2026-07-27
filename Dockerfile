@@ -1,5 +1,5 @@
-# Используем базовый образ ROS 2 Humble для Raspberry Pi
-FROM introlab3it/rtabmap_ros:humble-latest
+# Используем базовый образ ROS 2 Lyrical для Raspberry Pi
+FROM introlab3it/rtabmap_ros:lyrical-latest
 
 # Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
@@ -14,7 +14,7 @@ WORKDIR /ws
 RUN mkdir -p src
 
 # Устанавливаем Python-зависимости для матрицы
-RUN pip3 install --no-cache-dir \
+RUN pip3 install --break-system-packages --no-cache-dir \
     Pi5Neo \
     spidev \
     rpi_ws281x
@@ -24,11 +24,11 @@ COPY led_matrix_compositor src/led_matrix_compositor
 COPY led_matrix_driver src/led_matrix_driver
 
 # Сборка рабочей области
-RUN . /opt/ros/humble/setup.sh && \
+RUN . /opt/ros/lyrical/setup.sh && \
     colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 # Источнирование окружения
-RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
+RUN echo "source /opt/ros/lyrical/setup.bash" >> /root/.bashrc && \
     echo "source /ws/install/setup.bash" >> /root/.bashrc
 
 # Экспорт переменных ROS 2 для работы в сети
