@@ -38,7 +38,7 @@ class SpiralFillPublisher(Node):
         self.get_logger().info(f"Started spiral at (0,0) with color {self.color.tolist()}")
 
     def random_color(self):
-        """Случайный яркий цвет"""
+        """Случайный яркий цвет."""
         return np.array([
             random.randint(0, 255),
             random.randint(0, 255),
@@ -46,7 +46,7 @@ class SpiralFillPublisher(Node):
         ], dtype=np.uint8)
 
     def publish_image(self):
-        """Публикуем текущее изображение"""
+        """Публикуем текущее изображение."""
         msg = Image()
         msg.header = Header()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -75,11 +75,11 @@ class SpiralFillPublisher(Node):
         return True
 
     def turn_right(self):
-        """Поворот направо (по часовой)"""
+        """Поворот направо (по часовой)."""
         self.current_dir = (self.current_dir + 1) % 4
 
     def step(self):
-        """Один шаг спирали"""
+        """Один шаг спирали."""
         # Публикуем текущее состояние
         self.publish_image()
 

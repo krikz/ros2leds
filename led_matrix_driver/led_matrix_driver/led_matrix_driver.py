@@ -16,7 +16,7 @@ except ImportError:
 class LEDMatrixSimple(Node):
     def __init__(self):
         super().__init__('led_matrix_simple')
-        
+
         # Объявляем параметры
         self.declare_parameters(
             namespace='',
@@ -28,23 +28,23 @@ class LEDMatrixSimple(Node):
                 ('brightness', 25)  # Яркость 0-255 (25 = ~10%)
             ]
         )
-        
+
         # Получаем параметры
         self.num_leds = self.get_parameter('num_leds').value
         self.spi_speed_khz = self.get_parameter('spi_speed_khz').value
         self.spi_device = self.get_parameter('spi_device').value
         self.input_topic = self.get_parameter('input_topic').value
         self.brightness = self.get_parameter('brightness').value
-        
+
         # Проверяем корректность параметров
         if self.num_leds <= 0:
             self.get_logger().error("Parameter 'num_leds' must be positive")
             raise ValueError("Parameter 'num_leds' must be positive")
-        
+
         if self.brightness < 0 or self.brightness > 255:
             self.get_logger().error("Parameter 'brightness' must be between 0 and 255")
             raise ValueError("Parameter 'brightness' must be between 0 and 255")
-        
+
         # Инициализируем матрицу, если доступна библиотека pi5neo
         self.matrix_initialized = False
         if PI5NEO_AVAILABLE:
@@ -59,50 +59,50 @@ class LEDMatrixSimple(Node):
                 self.matrix_initialized = False
         else:
             self.get_logger().warn("Running in simulation mode (pi5neo not available)")
-        
+
         # Подписываемся на топик с данными
         self.data_subscription = self.create_subscription(
             Int8MultiArray,
             self.input_topic,
             self.data_callback,
             10)
-        
+
         self.get_logger().info(f"Subscribed to topic: {self.input_topic}")
         self.get_logger().info("LED Matrix Simple Driver is ready")
-    
+
     def data_callback(self, msg):
-        """Обрабатывает входящие данные для отображения на матрице"""
+        """Обрабатывает входящие данные для отображения на матрице."""
         if not self.matrix_initialized:
             self.get_logger().warn("Matrix not initialized, skipping data")
             return
-        
+
         # Проверяем длину данных
         expected_length = self.num_leds * 3
         if len(msg.data) != expected_length:
             self.get_logger().warn(f"Received data with incorrect length: {len(msg.data)} (expected {expected_length})")
             return
-        
+
         try:
             # Отображаем данные на матрице
             for i in range(self.num_leds):
                 # Определяем индекс в данных
                 idx = i * 3
-                
+
                 # Получаем цвет и применяем яркость
                 r = ((msg.data[idx] + 128) * self.brightness) // 255
                 g = ((msg.data[idx + 1] + 128) * self.brightness) // 255
                 b = ((msg.data[idx + 2] + 128) * self.brightness) // 255
-                
+
                 # Устанавливаем цвет
                 self.neo.set_led_color(i, r, g, b)
-            
+
             # Обновляем матрицу
             self.neo.update_strip()
         except Exception as e:
             self.get_logger().error(f"Error displaying  {str(e)}")
-    
+
     def destroy_node(self):
-        """Очистка при завершении работы"""
+        """Очистка при завершении работы."""
         if self.matrix_initialized:
             try:
                 # Очищаем матрицу
@@ -117,7 +117,7 @@ class LEDMatrixSimple(Node):
 def main(args=None):
     rclpy.init(args=args)
     led_matrix_simple = LEDMatrixSimple()
-    
+
     try:
         rclpy.spin(led_matrix_simple)
     except KeyboardInterrupt:
