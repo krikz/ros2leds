@@ -101,16 +101,59 @@ class LEDMatrixSimple(Node):
         except Exception as e:
             self.get_logger().error(f"Error displaying  {str(e)}")
 
+    def clear_matrix(self, retries: int = 3):
+        """Очищает матрицу (гасит все LED), устойчиво к сбоям SPI.
+
+        Если SPI-запись падает во время очистки, LED остаются в последнем
+        состоянии (горят). Поэтому:
+          - clear_strip() и update_strip() выполняются в отдельных try,
+            чтобы сбой одной операции не блокировал другую;
+          - при ошибке update_strip() пробуем переоткрыть SPI-устройство
+            и повторить очистку до ``retries`` раз;
+          - если всё ещё не получилось — форсируем очистку напрямую
+            через fill_strip(0,0,0,0) + update_strip().
+        """
+        if not self.matrix_initialized:
+            self.get_logger().warn("Matrix not initialized, cannot clear")
+            return
+
+        for attempt in range(1, retries + 1):
+            try:
+                self.neo.clear_strip()
+            except Exception as e:
+                self.get_logger().warn(f"clear_strip failed (attempt {attempt}/{retries}): {str(e)}")
+
+            try:
+                self.neo.update_strip()
+                self.get_logger().info("Matrix cleared on shutdown")
+                return
+            except Exception as e:
+                self.get_logger().warn(
+                    f"update_strip failed (attempt {attempt}/{retries}): {str(e)}"
+                )
+                # SPI-устройство могло пропасть (например, удалено при остановке):
+                # пробуем переоткрыть его перед следующей попыткой.
+                try:
+                    self.neo.close()
+                except Exception:
+                    pass
+                try:
+                    self.neo.open_spi_device(self.spi_device)
+                except Exception as e:
+                    self.get_logger().warn(f"Failed to reopen SPI device: {str(e)}")
+
+        # Финальная попытка: force-очистка через fill_strip в обход clear_strip
+        try:
+            self.neo.fill_strip(0, 0, 0, 0)
+            self.neo.update_strip()
+            self.get_logger().warn("Matrix cleared via forced fill_strip")
+        except Exception as e:
+            self.get_logger().error(f"Error clearing matrix on shutdown: {str(e)}")
+
     def destroy_node(self):
         """Очистка при завершении работы."""
         if self.matrix_initialized:
-            try:
-                # Очищаем матрицу
-                self.neo.clear_strip()
-                self.neo.update_strip()
-                self.get_logger().info("Matrix cleared on shutdown")
-            except Exception as e:
-                self.get_logger().error(f"Error clearing matrix on shutdown: {str(e)}")
+            self.clear_matrix()
         super().destroy_node()
 
 
