@@ -1,7 +1,93 @@
+# LED Matrix Compositor Configuration
+# ЕДИНСТВЕННЫЙ источник конфигурации композитора (TD-7).
+#
+# Файл читается нодой led_matrix_compositor через параметр `config_file`;
+# launch-файл резолвит путь с приоритетом volume (/config/led_matrix/...) > install.
+# Копия для volume живёт в rob_box_project: docker/vision/config/led_matrix/led_matrix_compositor.yaml
+# и должна поддерживаться в синхронизированном виде.
+#
+# Физическое подключение (цепочка через SPI):
+#   Panel 0-4: 5× 5×5 панели (main_display) = 125 LEDs
+#   Panel 5-8: 4× 8×8 панели (колёса передние/задние) = 256 LEDs
+#   Total: 381 LEDs
+
 led_matrix_compositor:
   ros__parameters:
-    # Топик для отправки данных в драйвер
-    output_topic: led_matrix/data
-    
-    # Топик для приема изображений для логических групп
-    input_topic: panel_image
+    # Физические панели (в порядке подключения в цепочке)
+    physical_panels:
+      # Main Display: 5 панелей 5×5
+      - width: 5
+        height: 5
+        snake_connection: true
+      - width: 5
+        height: 5
+        snake_connection: true
+      - width: 5
+        height: 5
+        snake_connection: true
+      - width: 5
+        height: 5
+        snake_connection: true
+      - width: 5
+        height: 5
+        snake_connection: true
+
+      # Колёса: 4 панели 8×8 (передние/задние)
+      - width: 8
+        height: 8
+        snake_connection: false
+      - width: 8
+        height: 8
+        snake_connection: false
+      - width: 8
+        height: 8
+        snake_connection: false
+      - width: 8
+        height: 8
+        snake_connection: false
+
+    # Логические группы (как приложения обращаются к панелям)
+    logical_groups:
+      # Главный дисплей: 5 панелей объединены горизонтально (5×25)
+      - name: main_display
+        physical_indices: [0, 1, 2, 3, 4]
+        arrangement: [5, 1]
+        flip_x: false
+        flip_y: true
+        snake_arrangement: false
+
+      # Передняя левая фара (8×8)
+      - name: wheel_front_left
+        physical_indices: [5]
+        arrangement: [1, 1]
+        flip_x: false
+        flip_y: false
+        snake_arrangement: false
+
+      # Передняя правая фара (8×8)
+      - name: wheel_front_right
+        physical_indices: [6]
+        arrangement: [1, 1]
+        flip_x: true
+        flip_y: true
+        snake_arrangement: false
+
+      # Задняя левая фара (8×8)
+      - name: wheel_rear_left
+        physical_indices: [7]
+        arrangement: [1, 1]
+        flip_x: false
+        flip_y: false
+        snake_arrangement: false
+
+      # Задняя правая фара (8×8)
+      - name: wheel_rear_right
+        physical_indices: [8]
+        arrangement: [1, 1]
+        flip_x: false
+        flip_y: false
+        snake_arrangement: false
+
+    # Топики
+    output_topic: led_matrix/data # Выход в драйвер
+    input_topic: panel_image # Вход от приложений (sensor_msgs/Image)

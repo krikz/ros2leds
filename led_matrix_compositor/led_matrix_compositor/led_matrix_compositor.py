@@ -1,89 +1,50 @@
 #!/usr/bin/env python3
+import os
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Int8MultiArray
 from sensor_msgs.msg import Image
 import numpy as np
 
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+
 class LEDMatrixCompositor(Node):
     def __init__(self):
         super().__init__('led_matrix_compositor')
 
-        # Определяем конфигурацию панелей напрямую в коде
-        # Физические панели в порядке их подключения в цепочке SPI:
-        # [0-4]: Main Display (5× 5×5 = 125 LEDs)
-        # [5]:   Передняя левая панель (8×8 = 64 LEDs)
-        # [6]:   Передняя правая панель (8×8 = 64 LEDs)
-        # [7]:   Задняя левая панель (8×8 = 64 LEDs)
-        # [8]:   Задняя правая панель (8×8 = 64 LEDs)
-        # Итого: 381 LEDs
-        self.physical_panels = [
-            # Main Display: 5 панелей 5×5
-            {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 0
-            {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 1
-            {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 2
-            {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 3
-            {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 4
-            # Передние панели: 2 панели 8×8
-            {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 5 (Front Left)
-            {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 6 (Front Right)
-            # Задние панели: 2 панели 8×8
-            {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 7 (Rear Left)
-            {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 8 (Rear Right)
-        ]
+        # ЕДИНСТВЕННЫЙ источник конфигурации — YAML-файл, путь к которому
+        # передаётся параметром `config_file`. Launch-файл резолвит его с
+        # приоритетом volume > install (см. led_matrix_compositor_launch.py).
+        # Значения в _default_config() — только fallback для `ros2 run` без
+        # параметров; они дублируют config/led_matrix_compositor.yaml и не
+        # должны расходиться с ним (TD-7).
+        self.declare_parameter('config_file', '')
+        config_file = self.get_parameter('config_file').value
 
-        # Логические группы панелей
-        self.logical_groups = [
-            # Главный дисплей (5×25)
-            {
-                'name': 'main_display',
-                'physical_indices': [0, 1, 2, 3, 4],
-                'arrangement': [5, 1],  # 5 панелей в ряд, 1 ряд
-                'flip_x': False,
-                'flip_y': True,
-                'snake_arrangement': False
-            },
-            # Передняя левая фара (8×8)
-            {
-                'name': 'wheel_front_left',
-                'physical_indices': [5],
-                'arrangement': [1, 1],  # 1 панель
-                'flip_x': False,
-                'flip_y': False,
-                'snake_arrangement': False
-            },
-            # Передняя правая фара (8×8)
-            {
-                'name': 'wheel_front_right',
-                'physical_indices': [6],
-                'arrangement': [1, 1],  # 1 панель
-                'flip_x': True,
-                'flip_y': True,
-                'snake_arrangement': False
-            },
-            # Задняя левая фара (8×8)
-            {
-                'name': 'wheel_rear_left',
-                'physical_indices': [7],
-                'arrangement': [1, 1],  # 1 панель
-                'flip_x': False,
-                'flip_y': False,
-                'snake_arrangement': False
-            },
-            # Задняя правая фара (8×8)
-            {
-                'name': 'wheel_rear_right',
-                'physical_indices': [8],
-                'arrangement': [1, 1],  # 1 панель
-                'flip_x': False,
-                'flip_y': False,
-                'snake_arrangement': False
-            }
-        ]
+        if config_file and os.path.exists(config_file):
+            config = self._load_config(config_file)
+            self.get_logger().info(f"Compositor configuration loaded from YAML: {config_file}")
+        else:
+            if config_file:
+                self.get_logger().warn(
+                    f"Compositor config file not found: {config_file}; using embedded defaults"
+                )
+            else:
+                self.get_logger().warn(
+                    "No config_file parameter set; using embedded defaults. "
+                    "Deployments must pass the YAML config via launch."
+                )
+            config = self._default_config()
 
-        # Топики
-        self.output_topic = 'led_matrix/data'
-        self.input_topic = 'panel_image'
+        self.physical_panels = config['physical_panels']
+        self.logical_groups = config['logical_groups']
+        self.output_topic = config.get('output_topic', 'led_matrix/data')
+        self.input_topic = config.get('input_topic', 'panel_image')
 
         # Проверяем корректность конфигурации
         if not self.physical_panels:
@@ -179,6 +140,101 @@ class LEDMatrixCompositor(Node):
 
         # Публикуем начальный черный буфер чтобы инициализировать все LED
         self.publish_buffer()
+
+    @staticmethod
+    def _load_config(config_file):
+        """Загружает конфигурацию композитора из YAML-файла."""
+        if yaml is None:
+            raise ImportError("PyYAML is required to load the compositor YAML config")
+
+        with open(config_file, 'r') as f:
+            raw = yaml.safe_load(f)
+
+        if not isinstance(raw, dict):
+            raise ValueError(f"Invalid YAML config {config_file}: expected a mapping")
+
+        # Поддерживаем как ROS2-обёртку (node_name: ros__parameters:), так и
+        # плоский формат (ключи конфигурации на верхнем уровне).
+        params = raw.get('led_matrix_compositor', raw)
+        if isinstance(params, dict) and 'ros__parameters' in params:
+            params = params['ros__parameters']
+
+        required = ('physical_panels', 'logical_groups')
+        missing = [key for key in required if key not in params]
+        if missing:
+            raise ValueError(
+                f"Config {config_file} is missing required keys: {', '.join(missing)}"
+            )
+        return params
+
+    @staticmethod
+    def _default_config():
+        """Fallback-конфигурация, идентичная config/led_matrix_compositor.yaml."""
+        return {
+            'physical_panels': [
+                # Main Display: 5 панелей 5×5
+                {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 0
+                {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 1
+                {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 2
+                {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 3
+                {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 4
+                # Передние панели: 2 панели 8×8
+                {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 5 (Front Left)
+                {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 6 (Front Right)
+                # Задние панели: 2 панели 8×8
+                {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 7 (Rear Left)
+                {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 8 (Rear Right)
+            ],
+            'logical_groups': [
+                # Главный дисплей (5×25)
+                {
+                    'name': 'main_display',
+                    'physical_indices': [0, 1, 2, 3, 4],
+                    'arrangement': [5, 1],  # 5 панелей в ряд, 1 ряд
+                    'flip_x': False,
+                    'flip_y': True,
+                    'snake_arrangement': False
+                },
+                # Передняя левая фара (8×8)
+                {
+                    'name': 'wheel_front_left',
+                    'physical_indices': [5],
+                    'arrangement': [1, 1],  # 1 панель
+                    'flip_x': False,
+                    'flip_y': False,
+                    'snake_arrangement': False
+                },
+                # Передняя правая фара (8×8)
+                {
+                    'name': 'wheel_front_right',
+                    'physical_indices': [6],
+                    'arrangement': [1, 1],  # 1 панель
+                    'flip_x': True,
+                    'flip_y': True,
+                    'snake_arrangement': False
+                },
+                # Задняя левая фара (8×8)
+                {
+                    'name': 'wheel_rear_left',
+                    'physical_indices': [7],
+                    'arrangement': [1, 1],  # 1 панель
+                    'flip_x': False,
+                    'flip_y': False,
+                    'snake_arrangement': False
+                },
+                # Задняя правая фара (8×8)
+                {
+                    'name': 'wheel_rear_right',
+                    'physical_indices': [8],
+                    'arrangement': [1, 1],  # 1 панель
+                    'flip_x': False,
+                    'flip_y': False,
+                    'snake_arrangement': False
+                }
+            ],
+            'output_topic': 'led_matrix/data',
+            'input_topic': 'panel_image'
+        }
 
     def image_callback(self, msg):
         """Обрабатывает изображение для логической группы панелей."""
