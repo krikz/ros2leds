@@ -1,10 +1,21 @@
 led_matrix_driver:
   ros__parameters:
     # Общее количество светодиодов в цепочке
-    num_leds: 253    
+    num_leds: 381
     # Скорость SPI в кГц
     spi_speed_khz: 1000    
     # SPI устройство
     spi_device: '/dev/spidev0.0' 
     # Топик для приема данных
     input_topic: 'led_matrix/data'
+    # Яркость 0-255 (25 = ~10%)
+    brightness: 25
+    # Ограничитель тока: бак 5 В x 30 Вт = 6 А, лимит с запасом 25% (<= 0 выключает)
+    max_current_ma: 4500.0
+    # Паспорт WS2812B: ~20 мА на канал при 255 и ~1 мА покоя на светодиод
+    ma_per_channel: 20.0
+    idle_ma_per_led: 1.0
+    # Пауза между записями для защёлки WS2812 (секунды)
+    min_frame_interval_s: 0.0003
+    # Каждое сообщение — вся лента: держим только последнее
+    queue_depth: 1

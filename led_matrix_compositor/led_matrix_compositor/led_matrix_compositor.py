@@ -127,15 +127,29 @@ class LEDMatrixCompositor(Node):
         # Публикуем в топик драйвера
         self.output_publisher = self.create_publisher(Int8MultiArray, self.output_topic, 10)
 
-        # Подписываемся на топик с изображениями для логических групп
+        # Подписываемся на топик с изображениями для логических групп.
+        # Глубина 10, а не 1: каждое сообщение — СВОЯ панель, и потеря
+        # одного оставила бы панель в старом кадре.
         self.image_subscription = self.create_subscription(
             Image,
             self.input_topic,
             self.image_callback,
             10)
 
+        # Лента целиком уходит в драйвер не на каждую панель, а не чаще
+        # max_publish_hz и только если что-то изменилось: один кадр лица из
+        # пяти панелей — одна запись в SPI вместо пяти.
+        self.max_publish_hz = float(config.get('max_publish_hz', 60.0))
+        self._dirty = False
+        self._flush_timer = None
+        if self.max_publish_hz > 0:
+            self._flush_timer = self.create_timer(1.0 / self.max_publish_hz, self._flush)
+
         self.get_logger().info(f"Listening for panel images on topic: {self.input_topic}")
-        self.get_logger().info(f"Publishing combined data to topic: {self.output_topic}")
+        self.get_logger().info(
+            f"Publishing combined data to topic: {self.output_topic}"
+            + (f" (at most {self.max_publish_hz:g} Hz)" if self._flush_timer else " (on every panel image)")
+        )
         self.get_logger().info("LED Matrix Compositor is ready")
 
         # Публикуем начальный черный буфер чтобы инициализировать все LED
@@ -233,7 +247,8 @@ class LEDMatrixCompositor(Node):
                 }
             ],
             'output_topic': 'led_matrix/data',
-            'input_topic': 'panel_image'
+            'input_topic': 'panel_image',
+            'max_publish_hz': 60.0
         }
 
     def image_callback(self, msg):
@@ -361,6 +376,16 @@ class LEDMatrixCompositor(Node):
                 panel_offset = self.physical_offsets[physical_index] * 3
                 self.buffer[panel_offset:panel_offset + len(panel_buffer)] = panel_buffer
 
+        if self._flush_timer is None:
+            self.publish_buffer()
+        else:
+            self._dirty = True
+
+    def _flush(self):
+        """Тик таймера: отправить ленту, если с прошлого тика менялась хоть одна панель."""
+        if not self._dirty:
+            return
+        self._dirty = False
         self.publish_buffer()
 
     def publish_buffer(self):
