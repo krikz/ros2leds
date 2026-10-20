@@ -5,7 +5,6 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Int8MultiArray
 from sensor_msgs.msg import Image
-import numpy as np
 
 try:
     import yaml
