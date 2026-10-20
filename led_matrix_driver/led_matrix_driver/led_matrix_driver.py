@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import ParameterDescriptor
 from std_msgs.msg import Int8MultiArray
 import time
+
+from led_matrix_driver import frame_math
 
 # Импортируем библиотеку для управления матрицей
 try:
@@ -17,6 +20,10 @@ class LEDMatrixSimple(Node):
     def __init__(self):
         super().__init__('led_matrix_simple')
 
+        # Числовые параметры тока принимают и int, и float из YAML: опечатка
+        # «4500» вместо «4500.0» не должна гасить ленту при старте.
+        number = ParameterDescriptor(dynamic_typing=True)
+
         # Объявляем параметры
         self.declare_parameters(
             namespace='',
@@ -25,7 +32,18 @@ class LEDMatrixSimple(Node):
                 ('spi_speed_khz', 1000),
                 ('spi_device', '/dev/spidev0.0'),
                 ('input_topic', 'led_matrix/data'),
-                ('brightness', 25)  # Яркость 0-255 (25 = ~10%)
+                ('brightness', 25),  # Яркость 0-255 (25 = ~10%)
+                # Ограничитель тока: бак 5 В × 30 Вт = 6 А, лимит с запасом 25%.
+                # Паспорт WS2812B: ~20 мА на канал при 255, ~1 мА покоя на LED.
+                ('max_current_ma', 4500.0, number),  # <= 0 выключает ограничитель
+                ('ma_per_channel', 20.0, number),
+                ('idle_ma_per_led', 1.0, number),
+                # Пауза между записями для защёлки WS2812 (>= 280 мкс низкого уровня).
+                # Раньше вместо неё после КАЖДОЙ записи был сон 100 мс внутри
+                # pi5neo.update_strip() — потолок ~9 кадров в секунду на всю ленту.
+                ('min_frame_interval_s', 0.0003, number),
+                # Каждое сообщение — вся лента, нужна только последняя.
+                ('queue_depth', 1),
             ]
         )
 
@@ -35,6 +53,16 @@ class LEDMatrixSimple(Node):
         self.spi_device = self.get_parameter('spi_device').value
         self.input_topic = self.get_parameter('input_topic').value
         self.brightness = self.get_parameter('brightness').value
+        self.max_current_ma = float(self.get_parameter('max_current_ma').value)
+        self.ma_per_channel = float(self.get_parameter('ma_per_channel').value)
+        self.idle_ma_per_led = float(self.get_parameter('idle_ma_per_led').value)
+        self.min_frame_interval_s = float(self.get_parameter('min_frame_interval_s').value)
+        self.queue_depth = max(1, int(self.get_parameter('queue_depth').value))
+
+        self._last_write = 0.0
+        self._limited_frames = 0
+        self._limit_log_at = 0.0
+        self._min_scale = 1.0
 
         # Проверяем корректность параметров
         if self.num_leds <= 0:
@@ -65,9 +93,14 @@ class LEDMatrixSimple(Node):
             Int8MultiArray,
             self.input_topic,
             self.data_callback,
-            10)
+            self.queue_depth)
 
-        self.get_logger().info(f"Subscribed to topic: {self.input_topic}")
+        self.get_logger().info(f"Subscribed to topic: {self.input_topic} (queue depth {self.queue_depth})")
+        if self.max_current_ma > 0:
+            self.get_logger().info(
+                f"Current limit: {self.max_current_ma:.0f} mA "
+                f"({self.ma_per_channel:g} mA/channel, {self.idle_ma_per_led:g} mA idle per LED)"
+            )
         self.get_logger().info("LED Matrix Simple Driver is ready")
 
     def data_callback(self, msg):
@@ -83,23 +116,53 @@ class LEDMatrixSimple(Node):
             return
 
         try:
-            # Отображаем данные на матрице
-            for i in range(self.num_leds):
-                # Определяем индекс в данных
-                idx = i * 3
-
-                # Получаем цвет и применяем яркость
-                r = ((msg.data[idx] + 128) * self.brightness) // 255
-                g = ((msg.data[idx + 1] + 128) * self.brightness) // 255
-                b = ((msg.data[idx + 2] + 128) * self.brightness) // 255
-
-                # Устанавливаем цвет
-                self.neo.set_led_color(i, r, g, b)
-
-            # Обновляем матрицу
-            self.neo.update_strip()
+            values = frame_math.apply_brightness(frame_math.to_unsigned(msg.data), self.brightness)
+            values, scale = frame_math.limit_current(
+                values, self.num_leds, self.max_current_ma, self.ma_per_channel, self.idle_ma_per_led
+            )
+            if scale < 1.0:
+                self._note_limited(scale)
+            self._write_frame(values)
         except Exception as e:
             self.get_logger().error(f"Error displaying  {str(e)}")
+
+    def _write_frame(self, values):
+        """Пишет кадр в ленту без сна pi5neo.update_strip() по умолчанию (100 мс)."""
+        wait = self.min_frame_interval_s - (time.monotonic() - self._last_write)
+        if wait > 0:
+            time.sleep(wait)
+        neo = self.neo
+        fast = (
+            hasattr(neo, 'raw_data') and hasattr(neo, 'send_spi_data')
+            and getattr(neo, 'bytes_per_led', 24) == 24
+            and getattr(getattr(neo, 'pixel_type', None), 'name', 'GRB') == 'GRB'
+        )
+        if fast:
+            # Тот же поток байт, что собрал бы update_strip(), но без
+            # питоновского цикла по LEDColor и без сна после передачи.
+            neo.raw_data = list(frame_math.encode_grb(values))
+            neo.send_spi_data()
+        else:
+            for i in range(self.num_leds):
+                idx = i * 3
+                neo.set_led_color(i, values[idx], values[idx + 1], values[idx + 2])
+            neo.update_strip(sleep_duration=None)
+        self._last_write = time.monotonic()
+
+    def _note_limited(self, scale):
+        """Считает кадры, срезанные ограничителем; в лог — не чаще раза в минуту."""
+        self._limited_frames += 1
+        self._min_scale = min(self._min_scale, scale)
+        now = time.monotonic()
+        if now - self._limit_log_at < 60.0:
+            return
+        self.get_logger().warn(
+            f"Current limiter: {self._limited_frames} frame(s) scaled down to stay under "
+            f"{self.max_current_ma:.0f} mA (deepest scale {self._min_scale:.2f})"
+        )
+        self._limit_log_at = now
+        self._limited_frames = 0
+        self._min_scale = 1.0
 
     def clear_matrix(self, retries: int = 3):
         """Очищает матрицу (гасит все LED), устойчиво к сбоям SPI.
