@@ -192,35 +192,38 @@ class LEDMatrixCompositor(Node):
                 {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 3
                 {'width': 5, 'height': 5, 'snake_connection': True},  # Panel 4
                 # Передние панели: 2 панели 8×8
-                {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 5 (Front Left)
-                {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 6 (Front Right)
+                {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 5 (Front Right)
+                {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 6 (Front Left)
                 # Задние панели: 2 панели 8×8
                 {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 7 (Rear Left)
                 {'width': 8, 'height': 8, 'snake_connection': False},  # Panel 8 (Rear Right)
             ],
             'logical_groups': [
+                # Весь перед смонтирован повёрнутым на 180° (тест-кадр с буквой F,
+                # 20.10.2026): рот — панели в обратном порядке с отражением по X,
+                # wheel_front_left — на том же борту, что wheel_rear_left.
                 # Главный дисплей (5×25)
                 {
                     'name': 'main_display',
-                    'physical_indices': [0, 1, 2, 3, 4],
+                    'physical_indices': [4, 3, 2, 1, 0],
                     'arrangement': [5, 1],  # 5 панелей в ряд, 1 ряд
-                    'flip_x': False,
-                    'flip_y': True,
+                    'flip_x': True,
+                    'flip_y': False,
                     'snake_arrangement': False
                 },
-                # Передняя левая фара (8×8)
+                # Передняя левая фара (8×8) — физическая панель 6
                 {
                     'name': 'wheel_front_left',
-                    'physical_indices': [5],
+                    'physical_indices': [6],
                     'arrangement': [1, 1],  # 1 панель
                     'flip_x': False,
                     'flip_y': False,
                     'snake_arrangement': False
                 },
-                # Передняя правая фара (8×8)
+                # Передняя правая фара (8×8) — физическая панель 5
                 {
                     'name': 'wheel_front_right',
-                    'physical_indices': [6],
+                    'physical_indices': [5],
                     'arrangement': [1, 1],  # 1 панель
                     'flip_x': True,
                     'flip_y': True,

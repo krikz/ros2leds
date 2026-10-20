@@ -75,3 +75,55 @@ def test_package_yaml_maps_pixels_exactly_like_embedded_defaults(params):
     from_yaml.timers[0].callback()
     from_code.timers[0].callback()
     assert list(pub_yaml.sent[-1].data) == list(pub_code.sent[-1].data)
+
+
+# Раскладка, на которой робот работал до 20.10.2026 (ros2leds afb263d / main 8b27154).
+PRE_PHOTO_GROUPS = {
+    'main_display': ([0, 1, 2, 3, 4], [5, 1], False, True),
+    'wheel_front_left': ([5], [1, 1], False, False),
+    'wheel_front_right': ([6], [1, 1], True, True),
+    'wheel_rear_left': ([7], [1, 1], False, False),
+    'wheel_rear_right': ([8], [1, 1], False, False),
+}
+
+
+def led_index_map(node):
+    """(group, y, x) -> индекс светодиода в ленте."""
+    out = {}
+    for g, (w, h) in GROUPS.items():
+        for y in range(h):
+            for x in range(w):
+                node.buffer[:] = bytes(len(node.buffer))
+                data = bytearray(w * h * 3)
+                data[(y * w + x) * 3:(y * w + x) * 3 + 3] = b'\xff\xff\xff'
+                node._handle_logical_group(node.logical_groups_map[g], bytes(data))
+                lit = {k // 3 for k, v in enumerate(node.buffer) if v}
+                assert len(lit) == 1
+                out[(g, y, x)] = lit.pop()
+    return out
+
+
+def test_front_is_the_pre_photo_layout_turned_180_degrees(params, tmp_path):
+    """Тест-кадр с буквой F 20.10.2026: при прежней раскладке весь перед был
+    повёрнут на 180°, а wheel_front_left стояла на другом борту, чем
+    wheel_rear_left. Новая раскладка = прежняя с поворотом переда и обменом фар."""
+    import yaml
+    cfg = yaml.safe_load(PKG_YAML.read_text(encoding='utf-8'))
+    groups = cfg['led_matrix_compositor']['ros__parameters']['logical_groups']
+    for g in groups:
+        idx, arr, fx, fy = PRE_PHOTO_GROUPS[g['name']]
+        g.update(physical_indices=idx, arrangement=arr, flip_x=fx, flip_y=fy)
+    old_yaml = tmp_path / 'pre_photo.yaml'
+    old_yaml.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding='utf-8')
+
+    old, _ = make(params, str(old_yaml))
+    new, _ = make(params, str(PKG_YAML))
+    old_map, new_map = led_index_map(old), led_index_map(new)
+    swap = {'wheel_front_left': 'wheel_front_right', 'wheel_front_right': 'wheel_front_left'}
+    for (g, y, x), led in new_map.items():
+        w, h = GROUPS[g]
+        if g == 'main_display' or g in swap:
+            want = old_map[(swap.get(g, g), h - 1 - y, w - 1 - x)]
+        else:
+            want = old_map[(g, y, x)]
+        assert led == want, (g, y, x)
