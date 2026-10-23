@@ -61,7 +61,10 @@ class LEDMatrixSimple(Node):
 
         self._last_write = 0.0
         self._limited_frames = 0
-        self._limit_log_at = 0.0
+        # Не 0.0: time.monotonic() на Linux - секунды с загрузки машины, и при 0.0
+        # первое предупреждение глотается, пока аптайм < 60 с (CI-раннер, Pi после
+        # старта). -inf = «ещё ни разу не писали», первый warn идёт сразу.
+        self._limit_log_at = float('-inf')
         self._min_scale = 1.0
 
         # Проверяем корректность параметров

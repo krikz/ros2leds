@@ -80,6 +80,38 @@ def test_current_limiter_caps_full_white_at_full_brightness(params):
     assert any('Current limiter' in m for lvl, m in node.get_logger().records if lvl == 'warn')
 
 
+def _limiter_warns(node):
+    return [m for lvl, m in node.get_logger().records
+            if lvl == 'warn' and 'Current limiter' in m]
+
+
+def test_limiter_warns_on_first_frame_even_right_after_boot(params, monkeypatch):
+    """Аптайм 30 с: time.monotonic() < 60 не должен глотать первое предупреждение.
+
+    Раньше _limit_log_at стартовал с 0.0, и «now - 0.0 < 60» подавляло warn
+    в первую минуту после загрузки машины (CI-раннер, Vision Pi).
+    """
+    clock = [30.0]
+    monkeypatch.setattr(drv.time, 'monotonic', lambda: clock[0])
+    node, _ = make_driver(params, brightness=255, min_frame_interval_s=0.0)
+    full_white = frame_msg([127] * (N * 3))
+
+    node.data_callback(full_white)
+    assert len(_limiter_warns(node)) == 1
+
+    # троттлинг не сломан: в пределах 60 с второе предупреждение не пишется
+    clock[0] = 30.0 + 59.0
+    node.data_callback(full_white)
+    assert len(_limiter_warns(node)) == 1
+
+    # а через 60 с от прошлого - пишется снова, со счётчиком накопленных кадров
+    clock[0] = 30.0 + 60.0
+    node.data_callback(full_white)
+    warns = _limiter_warns(node)
+    assert len(warns) == 2
+    assert '2 frame(s)' in warns[1]
+
+
 def test_wrong_length_frame_is_skipped(params):
     node, neo = make_driver(params)
     node.data_callback(frame_msg([0] * 30))
