@@ -244,7 +244,7 @@ class RobotMouthPublisher(Node):
 
         # Зубы с эффектом свечения
         for x in [2, 3, 22, 23]:
-            glow = int(100 + 155 * math.sin(self.time_offset * 3))
+            glow = max(0, int(100 + 155 * math.sin(self.time_offset * 3)))
             img[4, x] = [glow, glow, 255]
 
         return img
