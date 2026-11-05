@@ -54,6 +54,10 @@ flowchart LR
 |---|---|---|---|
 | `led_matrix_compositor` | `led_matrix_compositor` | `panel_image` (`sensor_msgs/Image`, `rgb8`) | `led_matrix/data` (`std_msgs/Int8MultiArray`) |
 | `led_matrix_driver` | `led_matrix_driver` | `led_matrix/data` (`std_msgs/Int8MultiArray`) | — (writes to SPI) |
+| `led_matrix_effects` | — (a Python library) | — | — |
+
+`led_matrix_effects` draws the pictures your node publishes: backgrounds, pulses, signals and lamp themes
+over all panels at once ([below](#effects-library-led_matrix_effects)).
 
 `led_matrix/data` carries the whole strip in chain order, `R, G, B` per LED, each byte stored as
 `channel - 128` (historical wire format). Applications normally never touch this topic.
@@ -237,6 +241,61 @@ The scripts in the repository root are small standalone ROS 2 nodes that publish
 | ![spiral](docs/images/spiral.gif) | [`spiral_fill_publisher.py`](spiral_fill_publisher.py) — fills the display in a spiral, then restarts in a new colour. |
 | ![test frames](docs/images/test_frames.gif) | [`directory_image_publisher.py`](directory_image_publisher.py) — plays PNG/JPG files named `<group>_<n>.png` from a folder, e.g. [`test_frames/`](test_frames) (needs OpenCV). |
 
+## Effects library: `led_matrix_effects`
+
+![Effects of led_matrix_effects on the rover layout](docs/images/led_matrix_effects.gif)
+
+<sub>Every frame above is computed by the package on the packaged compositor config
+(`docs/tools/render_preview.py`) and quantised as the driver shows it at brightness 25.</sub>
+
+A pure-Python package (numpy only, no ROS import) of effects for the panels of this repo. It knows
+the panels from the same `led_matrix_compositor.yaml` the compositor reads, puts them on one
+**canvas**, and draws effects that run across all of them, a wave that goes from one headlight
+through the mouth to the other. Your node only turns a frame into images (see
+[Draw something](#draw-something)).
+
+```python
+from led_matrix_effects import Canvas, Layout, Rainbow, Slash, Strip
+
+# Panels and sizes from the compositor config; optional: your names for the groups and where
+# each panel sits on the canvas (default: side by side, one LED apart).
+layout = Layout.from_compositor('led_matrix_compositor.yaml')
+canvas = Canvas(layout)
+strip = Strip(layout.n_leds, brightness=25)       # the driver's brightness and current model
+
+rainbow, slash = Rainbow(canvas), Slash(canvas)
+t = 1.0                                           # seconds
+frame = slash(0.1, rainbow(t))                    # a background, then a pulse over it
+for panel, levels in frame.panels().items():
+    group = layout.group_of[panel]                 # -> header.frame_id of the Image
+    data = strip.to_wire(levels).tobytes()         # rgb8 bytes, (width, height) = layout.size[panel]
+print(strip.frame_ma(frame), 'mA')                # current of the frame by the driver's model
+```
+
+| Module | What it has |
+|---|---|
+| `layout` | `Layout` (panels, sizes, compositor groups, canvas places; `Layout.from_compositor`), `Frame` (one picture: an `(h, w, 3)` array per panel) |
+| `canvas` | `Canvas`: every LED with its canvas `(x, y)` as flat numpy rows; `flat` / `split` between a frame and the rows |
+| `backgrounds` | `Rainbow`, `Fire`, `MatrixRain(seed=...)`, and `under(canvas, picture, background)`: the background through the picture, dimmed around it |
+| `pulses` | one-shot `Slash`, `Glitch(seed=...)`, `Boot(order=...)`, `PowerDown(centre=...)`, each with its `duration` |
+| `signals` | `beacon`, `flasher` (8x8 round lamp), `police_pattern`, `roadworks_pattern`, `doom_fire` + `fire_color`, `ECG`, `CROSS`, `CHEVRON` |
+| `lamps` | `THEMES` for a pair of 8x8 round lamps: tail light, hazard, party, holiday sprites; music `speaker_rings`, `eq_bars`, `disco` |
+| `power` | `Strip`: levels to wire bytes, `frame_ma` / `wire_ma`; `Strip.from_driver('led_matrix_driver.yaml')` |
+| `preview` | `render(canvas, frame)` to a `PIL.Image`, `save_gif` (needs Pillow) |
+
+**Levels, not bytes.** Effects draw in *levels* `0..brightness` (`Strip.max_level`). At the
+driver's brightness 25 only 26 shades per channel reach the LEDs (`v * 25 // 255`); a level
+`L` goes out as `ceil(L / 25 * 255)` and comes back from the driver exactly as `L`, so every
+shade an effect picks is visible. Backgrounds take a `level` (default 6 of 25) to stay below
+what is drawn over them and to keep the strip current low.
+
+**Deterministic.** Everything is a function of `t` and fixed seeds (`MatrixRain(seed=...)`,
+`Glitch(seed=...)`, the lamp themes): the same `t` gives the same frame on every machine. The
+tests pin the output byte by byte (`tests/test_effects.py`).
+
+Build it next to the nodes: `colcon build --packages-select led_matrix_effects` (depends on
+`python3-numpy`; `python3-yaml` to read the YAML files, Pillow only for `preview`).
+
 ## Hardware
 
 ```
@@ -252,13 +311,14 @@ The driver uses SPI to generate the WS2812 bit stream (8 SPI bits per data bit, 
 ## Development
 
 ```bash
-pip install pytest pyyaml
-python -m pytest tests -v          # driver + compositor logic, ROS and pi5neo are stubbed
+pip install pytest pyyaml numpy pillow
+python -m pytest tests -v          # driver + compositor logic (ROS and pi5neo stubbed), effects
 ```
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs these tests on Python 3.10 and
-3.12 and, in a `ros:humble-ros-base` container, builds both packages with colcon, starts the
-nodes and checks that an image sent to `main_display` comes out as a full 381-LED strip.
+3.12 and, in a `ros:humble-ros-base` container, builds the three packages with colcon, loads
+the installed `led_matrix_effects` with the packaged config, starts the nodes and checks that
+an image sent to `main_display` comes out as a full 381-LED strip.
 
 The pictures in this README are generated, not drawn:
 

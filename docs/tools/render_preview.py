@@ -6,8 +6,8 @@ Every picture is produced by the real code, not drawn by hand:
 * the panel layout and the SPI chain path come from the real
   ``LEDMatrixCompositor`` fed with the packaged YAML config;
 * the animations come from the example publishers (``effects.py``,
-  ``publish_image.py``, ``spiral_fill_publisher.py``) and from the PNG
-  frames in ``test_frames/``;
+  ``publish_image.py``, ``spiral_fill_publisher.py``), from the PNG
+  frames in ``test_frames/`` and from the ``led_matrix_effects`` package;
 * the current-limiter picture uses the driver's ``frame_math``.
 
 ROS 2, ``sounddevice`` and ``pi5neo`` are replaced by small stubs, so the
@@ -128,7 +128,7 @@ def install_stubs():
     module('rcl_interfaces').msg = module('rcl_interfaces.msg',
                                           ParameterDescriptor=lambda **k: SimpleNamespace(**k))
     module('sounddevice')
-    for pkg in ('led_matrix_driver', 'led_matrix_compositor'):
+    for pkg in ('led_matrix_driver', 'led_matrix_compositor', 'led_matrix_effects'):
         sys.path.insert(0, str(ROOT / pkg))
 
 
@@ -329,6 +329,69 @@ def chain_order(node):
     return [where[i] for i in sorted(where)]
 
 
+# ----------------------------------------------------------------- led_matrix_effects
+#: Canvas places of the groups for the effects (whole LEDs): the same picture of the rover as FRONT_AT.
+EFFECTS_AT = {'wheel_front_right': (0, 0), 'main_display': (10, 2), 'wheel_front_left': (37, 0),
+              'wheel_rear_left': (51, 0), 'wheel_rear_right': (61, 0)}
+
+
+def effects_frames():
+    """(caption, {group: rgb}, ms) frames of the led_matrix_effects package on the packaged rover layout."""
+    from led_matrix_effects import Boot, Canvas, Fire, Glitch, Layout, MatrixRain, PowerDown, Rainbow, Slash, Strip
+    from led_matrix_effects import lamps, signals
+
+    layout = Layout.from_compositor(ROOT / 'led_matrix_compositor' / 'config' / 'led_matrix_compositor.yaml',
+                                    at=EFFECTS_AT)
+    canvas, strip = Canvas(layout), Strip(layout.n_leds)
+    rainbow, fire, rain = Rainbow(canvas, level=12.0), Fire(canvas, level=12.0), MatrixRain(canvas, seed=1, level=12.0)
+
+    def police(t):
+        left, right, segs = signals.police_pattern(t)
+        f = canvas.new_frame()
+        f.wheel_front_right = signals.flasher(signals.RED, left)
+        f.wheel_front_left = signals.flasher(signals.BLUE, right)
+        for k, c in enumerate(segs):
+            if c is not None:
+                f.main_display[:, 4 * k + 1:4 * k + 4] = c
+        f.wheel_rear_left = signals.beacon(t, signals.RED, rpm=110)
+        f.wheel_rear_right = signals.beacon(t, signals.BLUE, rpm=110, phase=3.14)
+        return f
+
+    def lamp(theme):
+        def fn(t):
+            f = canvas.new_frame()
+            f.wheel_front_right, f.wheel_front_left = lamps.THEMES[theme](t)
+            f.wheel_rear_left, f.wheel_rear_right = lamps.THEMES[theme](t + 0.5)
+            return f
+        return fn
+
+    def pulse(p, base):
+        return lambda t: p(t, base(t))
+
+    # (caption, effect, seconds, frames per second): slow pictures at a low rate keep the GIF small, the short
+    # pulses need the full rate to be seen at all
+    clips = [
+        ('backgrounds.Rainbow', rainbow, 1.6, 6.25),
+        ('backgrounds.Fire', fire, 1.6, 6.25),
+        ('backgrounds.MatrixRain', rain, 1.6, 6.25),
+        ('signals: police_pattern, flasher, beacon', police, 1.6, 6.25),
+        ("lamps.THEMES['new_year']", lamp('new_year'), 1.2, 6.25),
+        ("lamps.THEMES['party']", lamp('party'), 1.2, 6.25),
+        ('pulses.Boot', pulse(Boot(canvas), police), 1.2, 12.5),
+        ('pulses.Slash', pulse(Slash(canvas), police), 0.32, 25.0),
+        ('pulses.Glitch', pulse(Glitch(canvas, seed=2), police), 0.4, 12.5),
+        ('pulses.PowerDown', pulse(PowerDown(canvas), police), 0.8, 12.5),
+    ]
+    out = []
+    for caption, fn, seconds, fps in clips:
+        for i in range(int(round(seconds * fps))):
+            f = fn(i / fps)
+            shown = {p: (255 * (strip.to_wire(a).astype(int) * strip.brightness // 255 / strip.brightness) ** (1 / 2.2))
+                     for p, a in f.panels().items()}
+            out.append((caption, {p: a.astype(np.uint8) for p, a in shown.items()}, int(round(1000 / fps))))
+    return out
+
+
 # ----------------------------------------------------------------- pictures
 def render_hero(path_png, path_gif):
     modes = mouth_modes(18)
@@ -346,6 +409,15 @@ def render_hero(path_png, path_gif):
         frames.append(compose((ROVER_W, ROVER_H), rover_panels(imgs), rover_labels()))
     frames[20].save(path_png)
     save_gif(frames[::2], path_gif, 80)
+
+
+def render_effects(path):
+    frames, ms = [], []
+    for caption, imgs, dt in effects_frames():
+        labels = rover_labels() + [(ROVER_W / 2, ROVER_H + 2, f'led_matrix_effects: {caption}', ACCENT)]
+        frames.append(compose((ROVER_W, ROVER_H + 16), rover_panels(imgs), labels))
+        ms.append(dt)
+    save_gif(frames, path, ms)
 
 
 def render_mouth_modes(path):
@@ -444,6 +516,7 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
 
     render_hero(out / 'rover.png', out / 'rover.gif')
+    render_effects(out / 'led_matrix_effects.gif')
     render_mouth_modes(out / 'effects_mouth_modes.gif')
     render_strip_gif(plasma_frames(), out / 'plasma.gif', 'publish_image.py: plasma', 90)
     render_strip_gif(spiral_frames(), out / 'spiral.gif', 'spiral_fill_publisher.py', 60)
@@ -454,7 +527,8 @@ def main(argv=None):
     print(f'chain: {n} LEDs')
     print(f'limiter: full white {asked:.0f} mA -> scale {scale:.4f} (channel {lv}) -> {got:.0f} mA')
     for p in sorted(out.iterdir()):
-        print(f'{p.relative_to(ROOT).as_posix()}  {p.stat().st_size // 1024} KiB')
+        shown = p.relative_to(ROOT).as_posix() if ROOT in p.resolve().parents else p
+        print(f'{shown}  {p.stat().st_size // 1024} KiB')
 
 
 if __name__ == '__main__':
