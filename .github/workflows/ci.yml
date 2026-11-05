@@ -48,19 +48,25 @@ jobs:
             --event-handlers console_direct+
       # No SPI in CI: pi5neo is absent, so the driver starts in simulation
       # mode. The smoke test checks that both nodes come up with the
-      # packaged configs and that one image sent to a logical group comes out as a full strip.
+      # packaged configs and that one image sent to a logical group comes
+      # out as a full strip.
       - name: Node smoke test
         run: |
           source install/setup.bash
           share_c=$(ros2 pkg prefix led_matrix_compositor)/share/led_matrix_compositor
           share_d=$(ros2 pkg prefix led_matrix_driver)/share/led_matrix_driver
-          ros2 run led_matrix_driver led_matrix_driver --ros-args \
+          # The driver node is named led_matrix_simple in code while its YAML
+          # is keyed led_matrix_driver: without the remap the packaged
+          # parameters are silently ignored (num_leds would stay 253).
+          ros2 run led_matrix_driver led_matrix_driver --ros-args -r __node:=led_matrix_driver \
             --params-file "$share_d/config/led_matrix_driver.yaml" > driver.log 2>&1 &
           ros2 run led_matrix_compositor led_matrix_compositor --ros-args \
             -p config_file:="$share_c/config/led_matrix_compositor.yaml" > compositor.log 2>&1 &
           sleep 3
           status=0
           python3 src/ros2leds/.github/ci/smoke_compositor.py || status=$?
+          num_leds=$(ros2 param get /led_matrix_driver num_leds || true)
+          echo "driver num_leds: $num_leds"
           kill %1 %2 || true
           wait || true
           echo '--- driver.log';     cat driver.log
@@ -68,4 +74,5 @@ jobs:
           grep -q 'LED Matrix Simple Driver is ready' driver.log
           grep -q 'Compositor configuration loaded from YAML' compositor.log
           grep -q 'LED Matrix Compositor is ready' compositor.log
+          echo "$num_leds" | grep -q 'Integer value is: 381'
           exit $status
