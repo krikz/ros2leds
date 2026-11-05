@@ -2,7 +2,8 @@
 
 A background is called with ``t`` (seconds) and returns a new frame. ``level`` is its brightest channel in levels:
 keep it well below the foreground (the default 6 of 25 leaves eyes or text at least twice as bright) — it lights
-every LED of the strip, so it also sets most of the current a frame draws.
+every LED of the strip, so it also sets most of the current a frame draws. On a strip with more levels (driver
+brightness above 25, ``Strip.max_level``) raise ``level`` in proportion.
 """
 from __future__ import annotations
 

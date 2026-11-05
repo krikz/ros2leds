@@ -4,6 +4,8 @@ A pulse is called as ``pulse(t, frame) -> frame`` with ``t`` in seconds since th
 frame in place. After :attr:`duration` it returns the frame untouched — except :class:`PowerDown`, which keeps the
 panels dark (the picture has been switched off). Before 0 a pulse has not started: the frame is untouched, except
 :class:`Boot`, whose panels are still dark (nothing has been switched on yet).
+
+Colours are given in levels of 25; ``levels`` (the brightest level of your strip, ``Strip.max_level``) rescales them.
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import numpy as np
 
 from .canvas import Canvas
 from .color import BLACK, clamp, col
+from .geometry import FULL, scaled
 from .layout import Frame
 
 
@@ -22,11 +25,12 @@ class Slash:
     """Katana: a thin bright slanted blade sweeps the canvas left to right, the picture behind it darkened a moment."""
 
     def __init__(self, canvas: Canvas, duration: float = 0.24, slant: float = 1.5, core: float = 2.5,
-                 trail: float = 20.0, shade: float = 0.8, color: np.ndarray = col(20, 23, 25)) -> None:
+                 trail: float = 20.0, shade: float = 0.8, color: np.ndarray = col(20, 23, 25),
+                 levels: float = FULL) -> None:
         #: ``slant`` columns per row; ``core`` columns of bright blade; ``trail`` columns of shadow behind it (keep it
         #: longer than the blade's step per frame, or a panel may be skipped); ``shade``: how dark the shadow starts
         self.canvas, self.duration, self.slant, self.core = canvas, duration, slant, core
-        self.trail, self.shade, self.color = trail, shade, color
+        self.trail, self.shade, self.color = trail, shade, scaled(color, levels)
         self._span = canvas.width + slant * canvas.height + trail
 
     def __call__(self, t: float, f: Frame) -> Frame:
@@ -53,8 +57,9 @@ class Glitch:
     frames shown black (a "dropped" frame)."""
 
     def __init__(self, canvas: Canvas, duration: float = 0.32, fps: float = 25, seed: int = 0, drop: float = 0.15,
-                 dead: Sequence[np.ndarray] = GLITCH_DEAD) -> None:
-        self.canvas, self.duration, self.fps, self.seed, self.drop, self.dead = canvas, duration, fps, seed, drop, dead
+                 dead: Sequence[np.ndarray] = GLITCH_DEAD, levels: float = FULL) -> None:
+        self.canvas, self.duration, self.fps, self.seed, self.drop = canvas, duration, fps, seed, drop
+        self.dead = dead if levels == FULL else tuple(scaled(c, levels) for c in dead)
 
     def __call__(self, t: float, f: Frame) -> Frame:
         if not 0.0 <= t < self.duration:
@@ -83,8 +88,8 @@ class Boot:
     """Switching on: panel after panel (in ``order``), row by row under a scan line; dark panels wait their turn."""
 
     def __init__(self, canvas: Canvas, order: Optional[Iterable[str]] = None, step_s: float = 0.22,
-                 row_s: float = 0.03, line: np.ndarray = col(10, 12, 14)) -> None:
-        self.canvas, self.step_s, self.row_s, self.line = canvas, step_s, row_s, line
+                 row_s: float = 0.03, line: np.ndarray = col(10, 12, 14), levels: float = FULL) -> None:
+        self.canvas, self.step_s, self.row_s, self.line = canvas, step_s, row_s, scaled(line, levels)
         self.order: Tuple[str, ...] = tuple(order) if order is not None else canvas.panels
         if sorted(self.order) != sorted(canvas.panels):
             raise ValueError(f'boot order {self.order} is not a permutation of the panels {canvas.panels}')
@@ -112,8 +117,8 @@ class PowerDown:
     ``centre`` is the canvas point the picture collapses to; default — the middle of the canvas."""
 
     def __init__(self, canvas: Canvas, centre: Optional[Tuple[float, float]] = None, squeeze_s: float = 0.3,
-                 duration: float = 0.6, line: np.ndarray = col(18, 18, 18)) -> None:
-        self.canvas, self.squeeze_s, self.duration, self.line = canvas, squeeze_s, duration, line
+                 duration: float = 0.6, line: np.ndarray = col(18, 18, 18), levels: float = FULL) -> None:
+        self.canvas, self.squeeze_s, self.duration, self.line = canvas, squeeze_s, duration, scaled(line, levels)
         cx, cy = centre if centre is not None else ((canvas.width - 1) / 2.0, (canvas.height - 1) / 2.0)
         self.cx, self.cy = cx, cy
 

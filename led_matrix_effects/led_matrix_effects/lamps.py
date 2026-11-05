@@ -1,25 +1,29 @@
-"""Pictures for a pair of 8x8 round lamps (tail lights, wheel lights): signals, holiday sprites, music.
+"""Pictures for a pair of round lamps (tail lights, wheel lights): signals, holiday sprites, music.
 
-Every theme is ``theme(t) -> (left, right)``: two ``(8, 8, 3)`` arrays of levels for ``t`` seconds, the right one
-usually the mirror of the left. :data:`THEMES` lists the themes by name; the music pictures
+Every theme is ``theme(t, size=(w, h), levels=25) -> (left, right)``: two ``(h, w, 3)`` arrays of levels for ``t``
+seconds, the right one usually the mirror of the left. :data:`THEMES` lists the themes by name; the music pictures
 (:func:`speaker_rings`, :func:`eq_bars`, :func:`disco`) also take the tempo in beats per minute. Pictures with
 randomness are deterministic: they seed their own ``random.Random`` from ``t`` and a fixed seed.
+
+Size and colour scale: see :mod:`led_matrix_effects.geometry`. Signals, rings, bars and disco are computed for any
+panel; the holiday sprites are 8x8 pictures enlarged to the panel and raise ``SpriteTooSmall`` on a smaller one.
+The defaults (8x8, 25 levels) give the pictures exactly as designed.
 """
 from __future__ import annotations
 
+import functools
 import math
 import random
 
 import numpy as np
 
 from .color import clamp, col
-
-_YY, _XX = np.mgrid[0:8, 0:8]
-_D = np.hypot(_XX - 3.5, _YY - 3.5)
+from .geometry import FULL, LAMP, fit, lamp_grid, scaled
 
 
 def sprite(rows, pal):
-    out = np.zeros((8, 8, 3))
+    """Rows of characters -> ``(len(rows), len(rows[0]), 3)`` picture; ``pal`` maps a character to its colour."""
+    out = np.zeros((len(rows), len(rows[0]), 3))
     for y, row in enumerate(rows):
         for x, ch in enumerate(row):
             if ch in pal:
@@ -28,27 +32,31 @@ def sprite(rows, pal):
 
 
 # ------------------------------------------------------------- taillight
-def taillight(t, brake=0.0):
-    ring = (_D > 2.6) & (_D <= 3.95)
-    core = _D <= 2.6
-    out = np.zeros((8, 8, 3))
+def taillight(t, brake=0.0, size=LAMP, levels=FULL):
+    """Tail light: a dim red lens with a brighter rim; ``brake`` 0..1 lights it up."""
+    d, _a = lamp_grid(size)
+    ring = (d > 2.6) & (d <= 3.95)
+    core = d <= 2.6
+    out = np.zeros(d.shape + (3,))
     out[ring] = col(12, 0, 0)
     out[core] = col(3, 0, 0) * (1 - brake) + col(25, 1, 0) * brake
     if brake > 0:
         out[ring] = col(12, 0, 0) * (1 - brake) + col(25, 3, 0) * brake
-    return out, out[:, ::-1].copy()
+    return scaled((out, out[:, ::-1].copy()), levels)
 
 
-def turn_signal(t, side, period=0.75):
+def turn_signal(t, side, period=0.75, size=LAMP, levels=FULL):
     """Sequential amber sweep (Audi-style) from the inner edge outward."""
     p = (t % period) / period
-    tail_l, tail_r = taillight(t)
-    sweep = np.zeros((8, 8, 3))
+    tail_l, tail_r = taillight(t, size=size)
+    d, _a = lamp_grid(size)
+    h, w = d.shape
+    sweep = np.zeros((h, w, 3))
     if p < 0.6:
-        k = int(p / 0.45 * 8) if p < 0.45 else 8      # columns lit, then hold
-        disc = _D <= 3.95
-        for x in range(8):
-            if 7 - x < k:
+        k = int(p / 0.45 * w) if p < 0.45 else w      # columns lit, then hold
+        disc = d <= 3.95
+        for x in range(w):
+            if w - 1 - x < k:
                 sweep[disc[:, x], x] = col(25, 10, 0)
     if side == 'left':
         lit = sweep.sum(axis=2) > 0
@@ -59,7 +67,16 @@ def turn_signal(t, side, period=0.75):
         lit = sweep.sum(axis=2) > 0
         tail_r = tail_r * 0.35
         tail_r[lit] = sweep[lit]
-    return tail_l, tail_r
+    return scaled((tail_l, tail_r), levels)
+
+
+def _sprite_theme(fn):
+    """A theme drawn at 8x8 -> a theme for any panel: the sprite enlarged to ``size``, scaled to ``levels``."""
+    @functools.wraps(fn)
+    def theme(t, *args, size=LAMP, levels=FULL, **kw):
+        left, right = fn(t, *args, **kw)
+        return scaled((fit(left, size), fit(right, size)), levels)
+    return theme
 
 
 # ------------------------------------------------------------- new year
@@ -77,6 +94,7 @@ TREE_BULBS = [(2, 2), (3, 5), (4, 2), (5, 4), (5, 6), (6, 1), (6, 3), (6, 6), (4
 BULB_COLORS = [col(25, 2, 2), col(25, 15, 0), col(4, 6, 25), col(25, 3, 16), col(2, 22, 22)]
 
 
+@_sprite_theme
 def new_year(t, rng_seed=7):
     pal = {'G': col(0, 9, 1), 'T': col(7, 3, 0), 'S': col(25, 18, 0)}
     outs = []
@@ -129,6 +147,7 @@ PUMPKIN_SQUINT = [
 ]
 
 
+@_sprite_theme
 def halloween(t, rng_seed=3):
     outs = []
     for side in (0, 1):
@@ -168,6 +187,7 @@ HEART_SMALL = [
 ]
 
 
+@_sprite_theme
 def valentine(t):
     outs = []
     for side in (0, 1):
@@ -193,6 +213,7 @@ STAR = [
 ]
 
 
+@_sprite_theme
 def red_star(t):
     outs = []
     for side in (0, 1):
@@ -223,6 +244,7 @@ TULIP = [
 ]
 
 
+@_sprite_theme
 def tulips(t):
     outs = []
     for side, petal in ((0, col(25, 2, 9)), (1, col(25, 9, 0))):
@@ -250,6 +272,7 @@ ROCKET = [            # flying up-right, like the emoji
 ]
 
 
+@_sprite_theme
 def rocket(t):
     outs = []
     for side in (0, 1):
@@ -277,13 +300,20 @@ def rocket(t):
 
 # ------------------------------------------------------------- fireworks (09.05 / NY eve)
 class Fireworks:
-    def __init__(self, seed=1):
+    """Fireworks over a pair of lamps: ``fw(t) -> (left, right)``; keeps its sparks between calls, call in order.
+
+    Sparks fly in lamp units (8x8) and are drawn on a panel of ``size``."""
+
+    def __init__(self, seed=1, size=LAMP):
+        self.size = (int(size[0]), int(size[1]))
         self.rng = random.Random(seed)
         self.parts = []
         self.next_t = 0.0
         self.last_t = 0.0
 
-    def __call__(self, t):
+    def __call__(self, t, levels=FULL):
+        w, h = self.size
+        sx, sy = w / LAMP[0], h / LAMP[1]
         dt = t - self.last_t
         self.last_t = t
         if t >= self.next_t:
@@ -297,7 +327,7 @@ class Fireworks:
                 sp = self.rng.uniform(2.6, 4.2)
                 self.parts.append([side, cx, cy, math.cos(a) * sp, math.sin(a) * sp, 1.0, c])
             self.next_t = t + self.rng.uniform(0.45, 1.1)
-        imgs = [np.zeros((8, 8, 3)), np.zeros((8, 8, 3))]
+        imgs = [np.zeros((h, w, 3)), np.zeros((h, w, 3))]
         alive = []
         for p in self.parts:
             p[1] += p[3] * dt
@@ -308,12 +338,12 @@ class Fireworks:
             p[5] -= dt * 0.9
             if p[5] <= 0:
                 continue
-            x, y = int(round(p[1])), int(round(p[2]))
-            if 0 <= x < 8 and 0 <= y < 8:
+            x, y = int(round(p[1] * sx)), int(round(p[2] * sy))
+            if 0 <= x < w and 0 <= y < h:
                 imgs[p[0]][y, x] = np.maximum(imgs[p[0]][y, x], p[6] * clamp(p[5] * 1.3, 0, 1))
             alive.append(p)
         self.parts = alive
-        return imgs[0], imgs[1]
+        return scaled((imgs[0], imgs[1]), levels)
 
 
 # ------------------------------------------------------------- birthday
@@ -329,6 +359,7 @@ CAKE = [
 ]
 
 
+@_sprite_theme
 def birthday(t):
     outs = []
     for side in (0, 1):
@@ -345,77 +376,98 @@ def birthday(t):
 
 
 # ------------------------------------------------------------- music
-def speaker_rings(t, bpm, hue_shift=0.0):
+def speaker_rings(t, bpm, hue_shift=0.0, size=LAMP, levels=FULL):
+    """A ring running out of the speaker on every beat; the colour changes every bar."""
+    d, _a = lamp_grid(size)
     beat = t * bpm / 60.0
     ph = beat % 1.0
     bar = int(beat // 4)
     palette = [col(25, 3, 12), col(2, 14, 25), col(25, 14, 0), col(4, 22, 8)]
     c = palette[bar % 4]
-    out = np.zeros((8, 8, 3))
+    out = np.zeros(d.shape + (3,))
     r = ph * 5.5
-    ring = np.abs(_D - r) < 0.7
+    ring = np.abs(d - r) < 0.7
     out[ring] = c * clamp(1.15 - ph, 0, 1)
-    core = _D < 1.5
+    core = d < 1.5
     out[core] = c * (1.0 if ph < 0.15 else 0.35)
-    return out, out[:, ::-1].copy()
+    return scaled((out, out[:, ::-1].copy()), levels)
 
 
-#: Colour of the k-th level of a bar from the bottom: green, amber, red on top.
-_EQ_STACK = np.array([(2, 18, 6) if k < 4 else ((25, 16, 0) if k < 6 else (25, 2, 2)) for k in range(8)], dtype=float)
+def _eq_stack(rows):
+    """Colour of the k-th level of a bar from the bottom: green the lower half, amber, red the top quarter."""
+    return np.array([(2, 18, 6) if k < rows * 0.5 else ((25, 16, 0) if k < rows * 0.75 else (25, 2, 2))
+                     for k in range(rows)], dtype=float)
 
 
-def eq_bars(t, bpm, seed=5):
+def eq_bars(t, bpm, seed=5, size=LAMP, levels=FULL):
+    """Equaliser: one bar per column, bass on the outer side with the kick, treble jittering."""
+    w, h_rows = int(size[0]), int(size[1])
+    stack = _eq_stack(h_rows)
     beat = t * bpm / 60.0
     ph = beat % 1.0
     kick = math.exp(-ph * 5)
     outs = []
     for side in (0, 1):
-        img = np.zeros((8, 8, 3))
-        for b in range(8):
-            band = b if side == 0 else 7 - b
-            lo = 1 - band / 7
+        img = np.zeros((h_rows, w, 3))
+        for b in range(w):
+            band = b if side == 0 else w - 1 - b
+            lo = 1 - band / (w - 1) if w > 1 else 1.0
             r = random.Random(int(t * 10) * 17 + band * 3 + side)
             h = lo * (2 + kick * 6.5) + (1 - lo) * (3 + 4.5 * r.random()) * (0.7 + 0.3 * math.sin(t * 3 + band))
-            h = int(clamp(h, 1, 8))
-            img[8 - h:, b] = _EQ_STACK[h - 1::-1]       # row 7 - k gets the colour of level k
+            h = int(clamp(h * (h_rows / LAMP[1]), 1, h_rows))     # bar height in lamp rows -> panel rows
+            img[h_rows - h:, b] = stack[h - 1::-1]       # row (rows-1) - k gets the colour of level k
         outs.append(img)
-    return outs[0], outs[1]
+    return scaled((outs[0], outs[1]), levels)
 
 
 DISCO_PAL = np.array(((25, 0, 10), (25, 12, 0), (18, 22, 0), (0, 20, 8), (0, 9, 25), (12, 0, 25)), dtype=float)
-_DISCO_ANG = np.array([[math.atan2(y - 3.5, x - 3.5) for x in range(8)] for y in range(8)])
-_DISCO_DISC = (_D <= 3.95)[..., None]
 
 
-def disco(t, bpm):
-    """Disco wheels: six colour sectors turning with the beat, every other one dimmed (vectorised, #3733)."""
+@functools.lru_cache(maxsize=64)
+def _disco_angle(w, h):
+    sx, sy = w / LAMP[0], h / LAMP[1]
+    cx, cy = (w - 1) / 2, (h - 1) / 2
+    return np.array([[math.atan2((y - cy) / sy, (x - cx) / sx) for x in range(w)] for y in range(h)])
+
+
+def disco(t, bpm, size=LAMP, levels=FULL):
+    """Disco wheels: six colour sectors turning with the beat, every other one dimmed (vectorised)."""
+    w, h = int(size[0]), int(size[1])
+    disc = (lamp_grid(size)[0] <= 3.95)[..., None]
     beat = t * bpm / 60.0
     outs = []
     for side in (0, 1):
         ang = beat * math.pi / 2 * (1 if side else -1)
-        a = _DISCO_ANG + ang
+        a = _disco_angle(w, h) + ang
         sector = ((a % math.tau) / math.tau * 6).astype(int)
         k = np.where((sector + int(beat)) % 2 == 0, 0.9, 0.25)[..., None]
-        outs.append(np.where(_DISCO_DISC, DISCO_PAL[sector] * k, 0.0))
-    return outs[0], outs[1]
+        outs.append(np.where(disc, DISCO_PAL[sector] * k, 0.0))
+    return scaled((outs[0], outs[1]), levels)
 
 
-def hazard(t):
+def hazard(t, size=LAMP, levels=FULL):
     """Hazard lights: the amber sweep on both sides at once."""
-    return turn_signal(t, 'left')[0], turn_signal(t, 'right')[1]
+    return turn_signal(t, 'left', size=size, levels=levels)[0], turn_signal(t, 'right', size=size, levels=levels)[1]
 
 
-def party(t, bpm=120.0):
+def party(t, bpm=120.0, size=LAMP, levels=FULL):
     """Party lights: disco wheels at a fixed tempo (no track playing)."""
-    return disco(t, bpm)
+    return disco(t, bpm, size=size, levels=levels)
 
 
-def dark(t):
-    return np.zeros((8, 8, 3)), np.zeros((8, 8, 3))
+def dark(t, size=LAMP, levels=FULL):
+    w, h = int(size[0]), int(size[1])
+    return np.zeros((h, w, 3)), np.zeros((h, w, 3))
 
 
+def default(t, size=LAMP, levels=FULL):
+    """The tail light, brakes off."""
+    return taillight(t, size=size, levels=levels)
+
+
+#: Theme name -> ``theme(t, size=(w, h), levels=25) -> (left, right)``.
 THEMES = {
-    'default': lambda t: taillight(t),
+    'default': default,
     'off': dark,
     'hazard': hazard,
     'party': party,
