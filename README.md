@@ -278,20 +278,71 @@ print(strip.frame_ma(frame), 'mA')                # current of the frame by the 
 | `canvas` | `Canvas`: every LED with its canvas `(x, y)` as flat numpy rows; `flat` / `split` between a frame and the rows |
 | `backgrounds` | `Rainbow`, `Fire`, `MatrixRain(seed=...)`, and `under(canvas, picture, background)`: the background through the picture, dimmed around it |
 | `pulses` | one-shot `Slash`, `Glitch(seed=...)`, `Boot(order=...)`, `PowerDown(centre=...)`, each with its `duration` |
-| `signals` | `beacon`, `flasher` (8x8 round lamp), `police_pattern`, `roadworks_pattern`, `doom_fire` + `fire_color`, `ECG`, `CROSS`, `CHEVRON` |
-| `lamps` | `THEMES` for a pair of 8x8 round lamps: tail light, hazard, party, holiday sprites; music `speaker_rings`, `eq_bars`, `disco` |
+| `signals` | `beacon`, `flasher` (round lamp on any panel), `police_pattern`, `roadworks_pattern`, `doom_fire` + `fire_color`, `ECG`, `CROSS`, `CHEVRON` |
+| `lamps` | `THEMES` for a pair of lamps: tail light, hazard, party, holiday sprites; music `speaker_rings`, `eq_bars`, `disco` |
+| `geometry` | panel size and colour scale of `signals` / `lamps`: `lamp_grid(size)`, `fit(sprite, size)`, `scaled(picture, levels)` |
 | `power` | `Strip`: levels to wire bytes, `frame_ma` / `wire_ma`; `Strip.from_driver('led_matrix_driver.yaml')` |
 | `preview` | `render(canvas, frame)` to a `PIL.Image`, `save_gif` (needs Pillow) |
 
 **Levels, not bytes.** Effects draw in *levels* `0..brightness` (`Strip.max_level`). At the
 driver's brightness 25 only 26 shades per channel reach the LEDs (`v * 25 // 255`); a level
 `L` goes out as `ceil(L / 25 * 255)` and comes back from the driver exactly as `L`, so every
-shade an effect picks is visible. Backgrounds take a `level` (default 6 of 25) to stay below
-what is drawn over them and to keep the strip current low.
+shade an effect picks is visible. Colours of the pictures are written for 25 levels; pass
+`levels=strip.max_level` to signals, lamps and pulses on a strip with another brightness.
+Backgrounds take a `level` (default 6 of 25) to stay below what is drawn over them and to keep
+the strip current low; scale it the same way.
 
 **Deterministic.** Everything is a function of `t` and fixed seeds (`MatrixRain(seed=...)`,
-`Glitch(seed=...)`, the lamp themes): the same `t` gives the same frame on every machine. The
-tests pin the output byte by byte (`tests/test_effects.py`).
+`Glitch(seed=...)`, the lamp themes): the same `t` gives the same frame. The tests pin the
+wire bytes (`tests/test_effects.py`, `tests/test_effects_sizes.py`); raw floats may differ in
+the last bit between platforms (`np.sin`), the rounding to levels hides that.
+
+### Your own matrices
+
+![Effects on a 16x16 matrix and a 32x8 bar](docs/images/own_matrices.gif)
+
+<sub>One 16x16 matrix and one 32x8 bar in one chain,
+[`docs/examples/own_matrices.yaml`](docs/examples/own_matrices.yaml), rendered by
+`docs/tools/render_preview.py`.</sub>
+
+Nothing in the package assumes the rover. Describe your panels to the compositor:
+
+```yaml
+led_matrix_compositor:
+  ros__parameters:
+    physical_panels:
+      - {width: 16, height: 16, snake_connection: true}   # 0: square matrix
+      - {width: 32, height: 8, snake_connection: true}    # 1: long bar
+    logical_groups:
+      - {name: square, physical_indices: [0], arrangement: [1, 1]}
+      - {name: bar, physical_indices: [1], arrangement: [1, 1]}
+```
+
+and draw on them with the same config:
+
+```python
+from led_matrix_effects import Canvas, Layout, Rainbow, Strip, lamps, signals
+
+layout = Layout.from_compositor('own_matrices.yaml', at={'square': (0, 0), 'bar': (18, 4)})
+canvas = Canvas(layout)
+strip = Strip(layout.n_leds, brightness=64)        # your driver's brightness
+lv = strip.max_level                               # 64 levels instead of 25
+
+frame = Rainbow(canvas, level=6 * lv / 25)(t)      # a background across both panels
+frame.square = lamps.THEMES['new_year'](t, size=layout.size['square'], levels=lv)[0]
+frame.bar = signals.beacon(t, signals.BLUE, size=layout.size['bar'], levels=lv)
+```
+
+- **Canvas effects** (`backgrounds`, `pulses`) work on any layout: they only use the panel sizes
+  and canvas places.
+- **Procedural pictures** (`beacon`, `flasher`, tail light, turn signal, rings, equaliser, disco)
+  take `size=(width, height)` and are computed on that grid. The lens fills a square panel and
+  becomes an ellipse on a long one (`geometry.lamp_grid`).
+- **Sprites** (holiday themes) are 8x8 pictures. On a bigger panel they are enlarged by the
+  largest integer factor that fits, nearest neighbour, and centred (`geometry.fit`). On a panel
+  smaller than 8x8, for example 5x5, they raise `SpriteTooSmall` instead of a mangled picture.
+- **Defaults** (`size=(8, 8)`, `levels=25`) give exactly the pictures the rover shows; the tests
+  pin them.
 
 Build it next to the nodes: `colcon build --packages-select led_matrix_effects` (depends on
 `python3-numpy`; `python3-yaml` to read the YAML files, Pillow only for `preview`).

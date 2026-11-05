@@ -392,6 +392,57 @@ def effects_frames():
     return out
 
 
+OWN_AT = {'square': (0, 0), 'bar': (18, 4)}     # canvas places for docs/examples/own_matrices.yaml
+
+
+def own_matrices_frames():
+    """(caption, {group: rgb}, ms) of led_matrix_effects on a 16x16 matrix and a 32x8 bar (README "Your own")."""
+    from led_matrix_effects import Canvas, Fire, Layout, PowerDown, Rainbow, Slash, Strip
+    from led_matrix_effects import lamps, signals
+
+    layout = Layout.from_compositor(ROOT / 'docs' / 'examples' / 'own_matrices.yaml', at=OWN_AT)
+    canvas, strip = Canvas(layout), Strip(layout.n_leds)
+    sq, bar = layout.size['square'], layout.size['bar']
+    rainbow, fire = Rainbow(canvas, level=12.0, wave_px=40.0), Fire(canvas, level=12.0, base=6.0, swing=4.0)
+
+    def signals_(t):
+        left, right, _segs = signals.police_pattern(t)
+        f = canvas.new_frame()
+        f.square = signals.beacon(t, signals.RED, rpm=90, size=sq)
+        f.bar = signals.flasher(signals.BLUE if right else signals.RED, left or right, size=bar)
+        return f
+
+    def music(t):
+        f = canvas.new_frame()
+        f.square = lamps.disco(t, 118.0, size=sq)[0]
+        f.bar = lamps.eq_bars(t, 118.0, size=bar)[0]
+        return f
+
+    def sprites(t):
+        f = canvas.new_frame()
+        f.square = lamps.THEMES['new_year'](t, size=sq)[0]
+        f.bar = lamps.THEMES['halloween'](t, size=bar)[0]
+        return f
+
+    clips = [
+        ('backgrounds.Rainbow', rainbow, 1.6, 6.25),
+        ('backgrounds.Fire', fire, 1.6, 6.25),
+        ('signals.beacon (16x16), signals.flasher (32x8)', signals_, 1.6, 6.25),
+        ('lamps.disco (16x16), lamps.eq_bars (32x8)', music, 1.6, 6.25),
+        ("lamps.THEMES sprites: 8x8 enlarged x2 (16x16), centred (32x8)", sprites, 1.2, 6.25),
+        ('pulses.Slash', lambda t: Slash(canvas)(t, rainbow(t)), 0.32, 25.0),
+        ('pulses.PowerDown', lambda t: PowerDown(canvas)(t, rainbow(t)), 0.8, 12.5),
+    ]
+    out = []
+    for caption, fn, seconds, fps in clips:
+        for i in range(int(round(seconds * fps))):
+            f = fn(i / fps)
+            shown = {p: (255 * (strip.to_wire(a).astype(int) * strip.brightness // 255 / strip.brightness) ** (1 / 2.2))
+                     for p, a in f.panels().items()}
+            out.append((caption, {p: a.astype(np.uint8) for p, a in shown.items()}, int(round(1000 / fps))))
+    return out
+
+
 # ----------------------------------------------------------------- pictures
 def render_hero(path_png, path_gif):
     modes = mouth_modes(18)
@@ -416,6 +467,20 @@ def render_effects(path):
     for caption, imgs, dt in effects_frames():
         labels = rover_labels() + [(ROVER_W / 2, ROVER_H + 2, f'led_matrix_effects: {caption}', ACCENT)]
         frames.append(compose((ROVER_W, ROVER_H + 16), rover_panels(imgs), labels))
+        ms.append(dt)
+    save_gif(frames, path, ms)
+
+
+def render_own_matrices(path):
+    w = int(MARGIN * 2 + 50 * PITCH)
+    h = int(MARGIN + 30 + 16 * PITCH + 40)
+    frames, ms = [], []
+    for caption, imgs, dt in own_matrices_frames():
+        panels = [(int(MARGIN + x * PITCH), int(MARGIN + 30 + y * PITCH), imgs[g]) for g, (x, y) in OWN_AT.items()]
+        labels = [(MARGIN + 7.5 * PITCH, MARGIN + 12, 'square 16x16', DIM_TEXT),
+                  (MARGIN + 33.5 * PITCH, MARGIN + 30 + 2.5 * PITCH, 'bar 32x8', DIM_TEXT),
+                  (w / 2, h - 16, f'led_matrix_effects: {caption}', ACCENT)]
+        frames.append(compose((w, h), panels, labels))
         ms.append(dt)
     save_gif(frames, path, ms)
 
@@ -517,6 +582,7 @@ def main(argv=None):
 
     render_hero(out / 'rover.png', out / 'rover.gif')
     render_effects(out / 'led_matrix_effects.gif')
+    render_own_matrices(out / 'own_matrices.gif')
     render_mouth_modes(out / 'effects_mouth_modes.gif')
     render_strip_gif(plasma_frames(), out / 'plasma.gif', 'publish_image.py: plasma', 90)
     render_strip_gif(spiral_frames(), out / 'spiral.gif', 'spiral_fill_publisher.py', 60)

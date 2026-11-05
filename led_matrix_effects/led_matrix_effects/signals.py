@@ -1,8 +1,12 @@
-"""Emergency and road signals: beacons and flashers for an 8x8 round lamp, flash patterns, a fire, an ECG trace.
+"""Emergency and road signals: beacons and flashers for a round lamp, flash patterns, a fire, an ECG trace.
 
 These are the building blocks of police, fire truck, ambulance, road service and roadworks scenes; an application
 puts them on its own panels (a lamp picture on a headlight, six segment colours on a light bar). Patterns are pure
 functions of ``t`` (seconds), so two lamps driven by the same pattern stay in sync.
+
+Lamp pictures take ``size=(width, height)`` of the panel and ``levels`` of the strip (:mod:`.geometry`); the
+defaults (8x8, 25 levels) give them exactly as designed. :data:`CROSS` and :data:`CHEVRON` are 8x8 / 4x5 sprites;
+``geometry.fit`` enlarges a picture of them to a bigger panel.
 """
 from __future__ import annotations
 
@@ -11,13 +15,11 @@ import math
 import numpy as np
 
 from .color import col
+from .geometry import FULL, LAMP, lamp_grid, scaled
 
-_YY, _XX = np.mgrid[0:8, 0:8]
-_D = np.hypot(_XX - 3.5, _YY - 3.5)
-_A = np.arctan2(_YY - 3.5, _XX - 3.5)
-#: Distance of every LED of an 8x8 lamp from its centre, and the round lens of the lamp.
-LAMP_R = _D
-DISC = _D <= 3.95
+#: Distance of every LED of an 8x8 lamp from its centre, and the round lens of the lamp (``lamp_grid`` for others).
+LAMP_R = lamp_grid(LAMP)[0]
+DISC = LAMP_R <= 3.95
 
 RED = col(25, 0, 0)
 BLUE = col(0, 5, 25)
@@ -26,35 +28,40 @@ AMBER = col(25, 11, 0)
 YELLOW = col(25, 17, 0)
 
 
-def beacon(t, color, rpm=100, phase=0.0, width=5.0):
-    """Rotating-mirror beacon on an 8x8 lamp: a bright beam sweeps around the lens."""
+def beacon(t, color, rpm=100, phase=0.0, width=5.0, size=LAMP, levels=FULL):
+    """Rotating-mirror beacon on a lamp: a bright beam sweeps around the lens. ``color`` in levels of 25."""
+    dist, angle = lamp_grid(size)
+    disc = dist <= 3.95
     ang = t * rpm / 60 * math.tau + phase
-    d = np.angle(np.exp(1j * (_A - ang)))
+    d = np.angle(np.exp(1j * (angle - ang)))
     k = np.clip(np.cos(d), 0, 1) ** width
-    out = np.zeros((8, 8, 3))
+    out = np.zeros(dist.shape + (3,))
     lens = 0.1 + 0.9 * k
     for c in range(3):
-        out[..., c] = np.where(DISC, color[c] * lens, 0)
-    core = _D < 1.2
+        out[..., c] = np.where(disc, color[c] * lens, 0)
+    core = dist < 1.2
     out[core] = color * 0.55 + col(25, 25, 25) * 0.25
-    return out
+    return scaled(out, levels)
 
 
-def flasher(color, on):
-    """Strobe on an 8x8 lamp: the whole lens with a white-hot centre when ``on``, a faint rim when off."""
-    out = np.zeros((8, 8, 3))
+def flasher(color, on, size=LAMP, levels=FULL):
+    """Strobe on a lamp: the whole lens with a white-hot centre when ``on``, a faint rim when off."""
+    dist, _a = lamp_grid(size)
+    disc = dist <= 3.95
+    out = np.zeros(dist.shape + (3,))
     if on:
-        out[DISC] = color
-        out[_D < 1.6] = color * 0.6 + col(25, 25, 25) * 0.4
+        out[disc] = color
+        out[dist < 1.6] = color * 0.6 + col(25, 25, 25) * 0.4
     else:
-        out[(_D > 3.0) & DISC] = color * 0.08
-    return out
+        out[(dist > 3.0) & disc] = color * 0.08
+    return scaled(out, levels)
 
 
 def police_pattern(t):
     """2.4 s cycle: double wig-wag x2, centre-out sweep, fast alternate.
 
-    Returns ``(left_on, right_on, segments)``: two flashers and six light-bar segment colours (None = dark)."""
+    Returns ``(left_on, right_on, segments)``: two flashers and six light-bar segment colours (None = dark), in
+    levels of 25 (``geometry.scaled`` for another scale)."""
     p = t % 2.4
     off = [None] * 6
     if p < 1.2:
@@ -87,15 +94,17 @@ def doom_fire(state, rng, w=25, h=7):
     return state
 
 
-def fire_color(v):
+def fire_color(v, levels=FULL):
     """Heat 0..1 of :func:`doom_fire` -> colour in levels: dark, deep red, orange, yellow-white."""
     if v < 0.18:
-        return col(0, 0, 0)
-    if v < 0.4:
-        return col(14, 0, 0) * ((v - 0.18) / 0.22 * 0.7 + 0.3)
-    if v < 0.65:
-        return col(25, 5 + (v - 0.4) / 0.25 * 9, 0)
-    return col(25, 15 + (v - 0.65) / 0.35 * 9, (v - 0.65) / 0.35 * 10)
+        c = col(0, 0, 0)
+    elif v < 0.4:
+        c = col(14, 0, 0) * ((v - 0.18) / 0.22 * 0.7 + 0.3)
+    elif v < 0.65:
+        c = col(25, 5 + (v - 0.4) / 0.25 * 9, 0)
+    else:
+        c = col(25, 15 + (v - 0.65) / 0.35 * 9, (v - 0.65) / 0.35 * 10)
+    return scaled(c, levels)
 
 
 #: Cells of a medical cross on an 8x8 lamp.

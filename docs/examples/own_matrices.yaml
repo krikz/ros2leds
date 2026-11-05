@@ -1,0 +1,20 @@
+# Example compositor config for other matrices: one 16x16 panel and one 32x8 bar in one chain
+# (512 LEDs). Used by the README section "Your own matrices" and by docs/tools/render_preview.py;
+# tests/test_effects_sizes.py loads it through the real compositor node.
+led_matrix_compositor:
+  ros__parameters:
+    physical_panels:
+      - {width: 16, height: 16, snake_connection: true}   # 0: square matrix, serpentine
+      - {width: 32, height: 8, snake_connection: true}    # 1: long bar, serpentine
+
+    logical_groups:
+      - name: square
+        physical_indices: [0]
+        arrangement: [1, 1]
+      - name: bar
+        physical_indices: [1]
+        arrangement: [1, 1]
+
+    input_topic: panel_image
+    output_topic: led_matrix/data
+    max_publish_hz: 60.0
