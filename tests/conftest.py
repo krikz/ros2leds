@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-for pkg in ('led_matrix_driver', 'led_matrix_compositor'):
+for pkg in ('led_matrix_driver', 'led_matrix_compositor', 'led_matrix_effects'):
     sys.path.insert(0, str(ROOT / pkg))
 
 PARAM_OVERRIDES = {}

@@ -20,9 +20,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install test dependencies
-        run: python -m pip install pytest pyyaml
+        # numpy: led_matrix_effects; pillow: its preview test (skipped without it)
+        run: python -m pip install pytest pyyaml numpy pillow
       # tests/conftest.py stubs rclpy, std_msgs, sensor_msgs and pi5neo,
-      # so the driver and compositor nodes run without ROS and without SPI.
+      # so the driver and compositor nodes run without ROS and without SPI;
+      # led_matrix_effects is pure numpy and needs no stubs.
       - name: pytest
         run: python -m pytest tests -v -p no:cacheprovider
 
@@ -40,16 +42,21 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends python3-yaml
+          apt-get install -y --no-install-recommends python3-yaml python3-numpy
       - name: colcon build
         run: |
           source /opt/ros/humble/setup.bash
-          colcon build --packages-select led_matrix_driver led_matrix_compositor \
+          colcon build --packages-select led_matrix_driver led_matrix_compositor led_matrix_effects \
             --event-handlers console_direct+
       # No SPI in CI: pi5neo is absent, so the driver starts in simulation
       # mode. The smoke test checks that both nodes come up with the
       # packaged configs and that one image sent to a logical group comes
       # out as a full strip.
+      - name: Effects package smoke test
+        run: |
+          source install/setup.bash
+          share_c=$(ros2 pkg prefix led_matrix_compositor)/share/led_matrix_compositor
+          python3 src/ros2leds/.github/ci/smoke_effects.py "$share_c/config/led_matrix_compositor.yaml"
       - name: Node smoke test
         run: |
           source install/setup.bash
