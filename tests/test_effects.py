@@ -268,15 +268,18 @@ def test_current_model_matches_the_driver(canvas):
 
 # ----------------------------------------------------------------- pinned output
 def _digest(frames):
+    """Digest of the wire bytes: what the strip shows. Raw floats are not pinned: ``np.sin`` differs in the last bit
+    between platforms (Windows and Linux CI disagreed on the fire), the rounding to levels hides that."""
+    strip = Strip(381)
     h = hashlib.sha256()
     for f in frames:
         for a in f.panels().values():
-            h.update(np.ascontiguousarray(a, dtype=float).tobytes())
+            h.update(strip.to_wire(a).tobytes())
     return h.hexdigest()[:16]
 
 
 def test_effects_on_the_rover_are_pinned(canvas):
-    """Byte-exact output of the effects on the rover canvas: a change here changes the robot's face.
+    """Byte-exact wire output of the effects on the rover canvas: a change here changes the robot's face.
 
     rob_box_project pins the same pictures through its own scenes; update both on purpose, never one by accident."""
     got = {
@@ -291,12 +294,12 @@ def test_effects_on_the_rover_are_pinned(canvas):
 
 
 PINNED = {
-    'rainbow': '502ffcb944ffaf2b',
-    'fire': 'bbe9c4a9797fac68',
-    'matrix': '04202a35438eaea8',
-    'slash': '58daed7dc0457e77',
-    'glitch': '57cd0749f519a89f',
-    'power_down': '0c35432d3fb898c2',
+    'rainbow': 'ea062bd83909c3aa',
+    'fire': '9a76aa8b7f3138c2',
+    'matrix': '8d46ce50b6076abe',
+    'slash': '840a20d5212b6a97',
+    'glitch': 'aa83ed6ecdc51dd4',
+    'power_down': '5309f945eb9acd03',
 }
 
 
@@ -306,4 +309,4 @@ def test_preview_draws_the_canvas(canvas):
 
     img = render(canvas, Rainbow(canvas)(0.0), pitch=5, margin=1)
     assert img.size == ((canvas.width + 2) * 5, (canvas.height + 2) * 5)
-    assert len(set(img.getdata())) > 10
+    assert len(img.getcolors(1 << 16)) > 10
