@@ -160,7 +160,7 @@ class LEDMatrixCompositor(Node):
         if yaml is None:
             raise ImportError("PyYAML is required to load the compositor YAML config")
 
-        with open(config_file, 'r') as f:
+        with open(config_file, 'r', encoding='utf-8') as f:
             raw = yaml.safe_load(f)
 
         if not isinstance(raw, dict):
