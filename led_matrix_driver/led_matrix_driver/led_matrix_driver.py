@@ -44,6 +44,10 @@ class LEDMatrixSimple(Node):
                 ('min_frame_interval_s', 0.0003, number),
                 # Каждое сообщение — вся лента, нужна только последняя.
                 ('queue_depth', 1),
+                # Тот же кадр подряд в ленту не пишем (SPI-запись = 30 % процесса, #3733),
+                # но не реже раза в repeat_refresh_s: лента могла моргнуть по питанию.
+                # 0 = писать каждое сообщение.
+                ('repeat_refresh_s', 2.0, number),
             ]
         )
 
@@ -58,6 +62,8 @@ class LEDMatrixSimple(Node):
         self.idle_ma_per_led = float(self.get_parameter('idle_ma_per_led').value)
         self.min_frame_interval_s = float(self.get_parameter('min_frame_interval_s').value)
         self.queue_depth = max(1, int(self.get_parameter('queue_depth').value))
+        self.repeat_refresh_s = float(self.get_parameter('repeat_refresh_s').value)
+        self._last_values = None
 
         self._last_write = 0.0
         self._limited_frames = 0
@@ -125,9 +131,20 @@ class LEDMatrixSimple(Node):
             )
             if scale < 1.0:
                 self._note_limited(scale)
+            if self._is_repeat(values):
+                return
             self._write_frame(values)
+            self._last_values = bytes(values)
         except Exception as e:
             self.get_logger().error(f"Error displaying  {str(e)}")
+
+    def _is_repeat(self, values):
+        """Тот же кадр, что уже в ленте, и обновлять его ещё рано."""
+        if self.repeat_refresh_s <= 0 or self._last_values is None:
+            return False
+        if time.monotonic() - self._last_write >= self.repeat_refresh_s:
+            return False
+        return bytes(values) == self._last_values
 
     def _write_frame(self, values):
         """Пишет кадр в ленту без сна pi5neo.update_strip() по умолчанию (100 мс)."""

@@ -80,7 +80,9 @@ class Node:
         return sub
 
     def create_timer(self, period, callback):
-        timer = SimpleNamespace(period=period, callback=callback)
+        timer = SimpleNamespace(period=period, callback=callback, armed=True, resets=0)
+        timer.cancel = lambda: setattr(timer, 'armed', False)
+        timer.reset = lambda: (setattr(timer, 'armed', True), setattr(timer, 'resets', timer.resets + 1))
         self.timers.append(timer)
         return timer
 

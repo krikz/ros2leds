@@ -50,10 +50,9 @@ def test_frame_at_brightness_25_is_byte_identical_to_old_driver(params):
 
 def test_no_100ms_sleep_after_write(params):
     node, neo = make_driver(params)
-    data = random_int8(5)
     t0 = time.monotonic()
-    for _ in range(10):
-        node.data_callback(frame_msg(data))
+    for i in range(10):
+        node.data_callback(frame_msg(random_int8(50 + i)))
     elapsed = time.monotonic() - t0
     assert len(neo.sent) == 10
     assert neo.update_calls == []          # быстрый путь не зовёт update_strip()
@@ -116,3 +115,29 @@ def test_wrong_length_frame_is_skipped(params):
     node, neo = make_driver(params)
     node.data_callback(frame_msg([0] * 30))
     assert neo.sent == []
+
+
+def test_same_frame_is_not_written_twice_but_refreshed_on_schedule(params, monkeypatch):
+    """#3733: повтор того же кадра не гонит SPI; раз в repeat_refresh_s лента всё же обновляется."""
+    clock = [100.0]
+    monkeypatch.setattr(drv.time, 'monotonic', lambda: clock[0])
+    node, neo = make_driver(params, repeat_refresh_s=2.0, min_frame_interval_s=0.0)
+    data = random_int8(7)
+    node.data_callback(frame_msg(data))
+    for _ in range(20):
+        clock[0] += 0.04
+        node.data_callback(frame_msg(data))
+    assert len(neo.sent) == 1
+    node.data_callback(frame_msg(random_int8(8)))               # другой кадр пишется сразу
+    assert len(neo.sent) == 2
+    clock[0] += 2.5
+    node.data_callback(frame_msg(random_int8(8)))               # тот же, но пора обновить ленту
+    assert len(neo.sent) == 3
+
+
+def test_repeat_refresh_zero_writes_every_message(params):
+    node, neo = make_driver(params, repeat_refresh_s=0)
+    data = random_int8(9)
+    for _ in range(3):
+        node.data_callback(frame_msg(data))
+    assert len(neo.sent) == 3
