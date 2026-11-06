@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -138,11 +139,24 @@ class LEDMatrixCompositor(Node):
         # Лента целиком уходит в драйвер не на каждую панель, а не чаще
         # max_publish_hz и только если что-то изменилось: один кадр лица из
         # пяти панелей — одна запись в SPI вместо пяти.
+        # Таймер НЕ тикает вхолостую: он взводится приходом изображения
+        # (один выстрел) и гасит себя, поэтому в статичной сцене композитор
+        # не будит исполнитель rclpy (#3733). Неизменную ленту повторно не шлём;
+        # раз в keepalive_s шлём её всё равно: драйвер или лента могли
+        # перезапуститься и ждать картинку (0 = не повторять).
         self.max_publish_hz = float(config.get('max_publish_hz', 60.0))
+        self.keepalive_s = float(config.get('keepalive_s', 2.0))
         self._dirty = False
+        self._flush_armed = False
+        self._last_publish_at = float('-inf')
+        self._last_published = None
         self._flush_timer = None
+        self._keepalive_timer = None
         if self.max_publish_hz > 0:
             self._flush_timer = self.create_timer(1.0 / self.max_publish_hz, self._flush)
+            self._flush_timer.cancel()
+            if self.keepalive_s > 0:
+                self._keepalive_timer = self.create_timer(self.keepalive_s, self._keepalive)
 
         self.get_logger().info(f"Listening for panel images on topic: {self.input_topic}")
         self.get_logger().info(
@@ -250,13 +264,25 @@ class LEDMatrixCompositor(Node):
             ],
             'output_topic': 'led_matrix/data',
             'input_topic': 'panel_image',
-            'max_publish_hz': 60.0
+            'max_publish_hz': 60.0,
+            'keepalive_s': 2.0
         }
 
     def image_callback(self, msg):
-        """Обрабатывает изображение для логической группы панелей."""
+        """Обрабатывает изображение для логической группы панелей.
+
+        ``frame_id`` — имя группы или несколько имён через запятую: тогда это
+        кадр целиком одним сообщением, ``data`` — картинки групп подряд в том же
+        порядке, ``width`` * ``height`` = число пикселей всех групп вместе
+        (``height`` = 1). Так лицо шлёт один Image на кадр вместо пяти (#3733).
+        """
         try:
-            group_name = msg.header.frame_id
+            frame_id = msg.header.frame_id
+            if ',' in frame_id:
+                self._handle_frame(msg, [name.strip() for name in frame_id.split(',')])
+                return
+
+            group_name = frame_id
 
             if group_name not in self.logical_groups_map:
                 # Показываем предупреждение только один раз для каждой неизвестной группы
@@ -286,9 +312,38 @@ class LEDMatrixCompositor(Node):
                 return
 
             self._handle_logical_group(group, msg.data)
+            self._request_publish()
 
         except Exception as e:
             self.get_logger().error(f"Error processing panel image: {str(e)}")
+
+    def _handle_frame(self, msg, names):
+        """Кадр из нескольких групп в одном Image; при любой ошибке не применяется ни одна группа."""
+        unknown = [n for n in names if n not in self.logical_groups_map]
+        if unknown:
+            for name in unknown:
+                if name not in self.warned_unknown_groups:
+                    self.get_logger().warn(f"Unknown logical group: '{name}'")
+                    self.warned_unknown_groups.add(name)
+            return
+        if msg.encoding != 'rgb8':
+            self.get_logger().warn(f"Unsupported image encoding: {msg.encoding}. Expected 'rgb8'")
+            return
+        groups = [self.logical_groups_map[n] for n in names]
+        pixels = sum(g['width'] * g['height'] for g in groups)
+        if msg.height != 1 or msg.width != pixels or len(msg.data) != pixels * 3:
+            self.get_logger().warn(
+                f"Frame {msg.width}x{msg.height} ({len(msg.data)} bytes) doesn't match groups "
+                f"{names}: expected {pixels}x1 ({pixels * 3} bytes)"
+            )
+            return
+        data = bytes(msg.data)
+        offset = 0
+        for group in groups:
+            size = group['width'] * group['height'] * 3
+            self._handle_logical_group(group, data[offset:offset + size])
+            offset += size
+        self._request_publish(immediate=True)
 
     def _handle_logical_group(self, group, image_data):
         """Обрабатывает изображение для логической группы панелей с учётом flip и snake."""
@@ -378,23 +433,49 @@ class LEDMatrixCompositor(Node):
                 panel_offset = self.physical_offsets[physical_index] * 3
                 self.buffer[panel_offset:panel_offset + len(panel_buffer)] = panel_buffer
 
+    def _request_publish(self, immediate=False):
+        """Лента изменилась: отправить сразу (кадр пришёл целиком) или чуть позже (одна панель кадра).
+
+        Не чаще max_publish_hz. Отложенную отправку делает одноразовый таймер, который гасит
+        себя в ``_flush``; панели одного кадра, пришедшие порознь, склеиваются в одну запись.
+        """
         if self._flush_timer is None:
             self.publish_buffer()
-        else:
-            self._dirty = True
+            return
+        self._dirty = True
+        if self._flush_armed:
+            return
+        if immediate and time.monotonic() - self._last_publish_at >= 1.0 / self.max_publish_hz:
+            self._flush()
+            return
+        self._flush_armed = True
+        self._flush_timer.reset()
 
     def _flush(self):
-        """Тик таймера: отправить ленту, если с прошлого тика менялась хоть одна панель."""
+        """Тик одноразового таймера (или отправка сразу): записать ленту, если она менялась."""
+        if self._flush_timer is not None:
+            self._flush_timer.cancel()
+        self._flush_armed = False
         if not self._dirty:
             return
         self._dirty = False
         self.publish_buffer()
 
-    def publish_buffer(self):
-        """Публикует общий буфер в топик драйвера."""
+    def _keepalive(self):
+        """Редкий повтор той же ленты: драйвер мог перезапуститься и ждать кадр."""
+        if time.monotonic() - self._last_publish_at >= self.keepalive_s:
+            self.publish_buffer(force=True)
+
+    def publish_buffer(self, force=False):
+        """Публикует общий буфер в топик драйвера; ту же ленту повторно только с ``force``."""
         msg = Int8MultiArray()
 
         try:
+            snapshot = bytes(self.buffer)
+            if not force and snapshot == self._last_published:
+                return
+            self._last_published = snapshot
+            self._last_publish_at = time.monotonic()
             processed_data = []
             for value in self.buffer:
                 val = int(value)
@@ -424,6 +505,7 @@ class LEDMatrixCompositor(Node):
 
         black_image = bytearray(size)
         self._handle_logical_group(group, black_image)
+        self._request_publish()
 
     def clear_all(self):
         """Очищает все логические группы (заливает черным)."""

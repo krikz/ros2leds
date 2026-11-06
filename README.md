@@ -28,7 +28,12 @@ wiring order, snake pattern or mounting orientation.
 - **Plain ROS 2 images.** Input is `sensor_msgs/Image` (`rgb8`), so anything that can publish an
   image — Python, C++, `ros2 topic pub`, `cv_bridge` — can draw on the panels.
 - **One SPI write per frame.** The compositor merges updates of all groups and sends the whole
-  strip at most `max_publish_hz` times per second (default 60), only when something changed.
+  strip at most `max_publish_hz` times per second (default 60), only when something changed;
+  an unchanged strip is not re-sent (only a keep-alive every `keepalive_s`, default 2 s). The
+  rate-cap timer fires once per incoming image and stays idle otherwise.
+- **One message per frame.** A node that draws several groups at once can send them as a single
+  `Image`: `frame_id = "group_a,group_b"`, `data` = the group images back to back in that order,
+  `width` = total pixel count, `height` = 1. A single group name works as before.
 - **Current limiter.** The driver estimates the strip current per frame and dims the whole frame
   uniformly if it would exceed the power budget (default 4.5 A) — colours stay the same.
 - **Global brightness** in the driver (default 25/255, about 10 %).
@@ -188,6 +193,7 @@ led_matrix_compositor:
     input_topic: panel_image
     output_topic: led_matrix/data
     max_publish_hz: 60.0           # 0 = publish the strip on every incoming image
+    keepalive_s: 2.0               # re-send an unchanged strip this often (0 = never)
 ```
 
 | Key | Where | Meaning |
@@ -215,6 +221,7 @@ The full rover config is [`led_matrix_compositor/config/led_matrix_compositor.ya
 | `idle_ma_per_led` | `1.0` | quiescent current per LED |
 | `min_frame_interval_s` | `0.0003` | minimum gap between writes (WS2812 latch) |
 | `queue_depth` | `1` | subscription depth: only the latest strip matters |
+| `repeat_refresh_s` | `2.0` | an identical frame is not written to SPI again, except this often (0 = write every message) |
 
 ## Current limiter
 

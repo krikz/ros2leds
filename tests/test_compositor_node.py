@@ -127,3 +127,116 @@ def test_front_is_the_pre_photo_layout_turned_180_degrees(params, tmp_path):
         else:
             want = old_map[(g, y, x)]
         assert led == want, (g, y, x)
+
+
+# --- #3733: один Image на кадр, без повторов, без таймера вхолостую ---------------------------
+
+def frame_msg(groups, seed=0):
+    """Весь кадр одним Image: frame_id = группы через запятую, data = картинки подряд."""
+    parts = [image(g, seed + i) for i, g in enumerate(groups)]
+    msg = Image()
+    msg.header.frame_id = ','.join(groups)
+    msg.data = b''.join(bytes(p.data) for p in parts)
+    msg.width, msg.height = len(msg.data) // 3, 1
+    return msg, parts
+
+
+def settle(node):
+    """Прошлая запись была давно: лимит max_publish_hz кадру не мешает."""
+    node._last_publish_at -= 1.0
+
+
+def test_one_frame_message_gives_the_same_strip_as_separate_panel_images(params):
+    sep, pub_sep = make(params, str(PKG_YAML))
+    one, pub_one = make(params, str(PKG_YAML))
+    names = list(GROUPS)
+    msg, parts = frame_msg(names, seed=21)
+    for p in parts:
+        sep.image_callback(p)
+    sep.timers[0].callback()
+    settle(one)
+    one.image_callback(msg)
+    assert list(pub_one.sent[-1].data) == list(pub_sep.sent[-1].data)
+    assert len(pub_one.sent) == 2             # чёрный старт + кадр, без ожидания таймера
+
+
+def test_frame_message_may_carry_only_some_groups(params):
+    node, pub = make(params, str(PKG_YAML))
+    ref, pub_ref = make(params, str(PKG_YAML))
+    msg, parts = frame_msg(['main_display', 'wheel_rear_left'], seed=3)
+    settle(node)
+    node.image_callback(msg)
+    for p in parts:
+        ref.image_callback(p)
+    ref.timers[0].callback()
+    assert list(pub.sent[-1].data) == list(pub_ref.sent[-1].data)
+
+
+def test_bad_frame_message_changes_nothing(params):
+    node, pub = make(params, str(PKG_YAML))
+    msg, _ = frame_msg(['main_display', 'wheel_rear_left'])
+    msg.data = msg.data[:-3]
+    node.image_callback(msg)
+    unknown, _ = frame_msg(['main_display', 'wheel_rear_left'])
+    unknown.header.frame_id = 'main_display,nope'
+    node.image_callback(unknown)
+    assert len(pub.sent) == 1 and not any(node.buffer)
+
+
+def test_static_scene_publishes_nothing_after_the_first_frame(params):
+    node, pub = make(params, str(PKG_YAML))
+    msg, _ = frame_msg(list(GROUPS), seed=5)
+    settle(node)
+    node.image_callback(msg)
+    sent = len(pub.sent)
+    for _ in range(100):                      # лицо повторяет тот же кадр
+        node.image_callback(msg)
+        node.timers[0].callback()
+    assert len(pub.sent) == sent
+
+
+def test_animated_scene_is_one_strip_write_per_frame(params):
+    node, pub = make(params, str(PKG_YAML))
+    settle(node)
+    node.image_callback(frame_msg(list(GROUPS), seed=1)[0])
+    before = len(pub.sent)
+    for i in range(1, 26):
+        settle(node)                          # кадры идут реже 60 Гц
+        node.image_callback(frame_msg(list(GROUPS), seed=1 + i)[0])
+    assert len(pub.sent) - before == 25
+
+
+def test_flush_timer_is_idle_until_an_image_arrives_and_disarms_itself(params):
+    node, pub = make(params, str(PKG_YAML))
+    flush = node.timers[0]
+    assert flush.armed is False               # вхолостую не тикает
+    node.image_callback(image('main_display', 1))
+    assert flush.armed is True and flush.resets == 1
+    flush.callback()
+    assert flush.armed is False
+
+
+def test_rate_cap_defers_a_too_early_frame_to_the_one_shot_timer(params):
+    node, pub = make(params, str(PKG_YAML))
+    settle(node)
+    node.image_callback(frame_msg(list(GROUPS), seed=1)[0])
+    n = len(pub.sent)
+    node.image_callback(frame_msg(list(GROUPS), seed=2)[0])   # через микросекунды: лимит 60 Гц
+    assert len(pub.sent) == n and node.timers[0].armed
+    node.timers[0].callback()
+    assert len(pub.sent) == n + 1 and not node.timers[0].armed
+
+
+def test_keepalive_repeats_the_same_strip_rarely(params):
+    node, pub = make(params, str(PKG_YAML))
+    keep = node.timers[1]
+    assert abs(keep.period - 2.0) < 1e-9
+    settle(node)
+    node.image_callback(frame_msg(list(GROUPS), seed=1)[0])
+    n = len(pub.sent)
+    keep.callback()                           # только что писали: рано
+    assert len(pub.sent) == n
+    node._last_publish_at -= 3.0
+    keep.callback()
+    assert len(pub.sent) == n + 1
+    assert list(pub.sent[-1].data) == list(pub.sent[-2].data)
