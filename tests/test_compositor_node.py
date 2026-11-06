@@ -164,6 +164,7 @@ def test_frame_message_may_carry_only_some_groups(params):
     node, pub = make(params, str(PKG_YAML))
     ref, pub_ref = make(params, str(PKG_YAML))
     msg, parts = frame_msg(['main_display', 'wheel_rear_left'], seed=3)
+    settle(node)
     node.image_callback(msg)
     for p in parts:
         ref.image_callback(p)
